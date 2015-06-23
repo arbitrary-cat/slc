@@ -1,0 +1,15 @@
+[package]
+name = "slc"
+version = "0.1.0"
+authors = ["null <null>"]
+
+[lib]
+name = "sl"
+path = "src/lib.rs"
+
+[[bin]]
+name = "slc"
+path = "src/main.rs"
+
+[dependencies.cats]
+path = "../cats"
