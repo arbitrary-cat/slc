@@ -176,14 +176,52 @@ impl<'ctx> GenNode<'ctx> for TranslationUnit<'ctx> {
     }
 }
 
+/// A list of variables being declared by name.
+pub struct VarDecl<'ctx> {
+    /// Identifiers which name the variables being declared.
+    pub names: Vec<&'ctx Node<'ctx>>,
+
+    /// The type of the variables being declared.
+    pub ty: &'ctx Type<'ctx>,
+}
+
+impl<'ctx> AsRef<VarDecl<'ctx>> for Node<'ctx> {
+    fn as_ref(&self) -> &VarDecl<'ctx> {
+        match self {
+            &Node::VarDecl(ref var_decl) => var_decl,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'ctx> Into<Node<'ctx>> for VarDecl<'ctx> {
+    fn into(self) -> Node<'ctx> { Node::VarDecl(self) }
+}
+
+impl<'ctx> GenNode<'ctx> for VarDecl<'ctx> {
+    fn loc(&self)
+    -> source::Loc<'ctx>
+    {
+        self.names.first().unwrap().loc()
+    }
+
+    fn text(&self)
+    -> &'ctx str
+    {
+        "<var decl>"
+    }
+}
 
 /// A function declaration.
 pub struct FnDecl<'ctx> {
     /// The name of this function, at the location where it was declared.
     pub name: &'ctx Node<'ctx>,
 
-    /// The identifiers which declare the arguments to this function.
+    /// The VarDecls which declare the arguments to this function.
     pub args: Vec<&'ctx Node<'ctx>>,
+
+    /// Type that the function outputs.
+    pub to: &'ctx Type<'ctx>,
 
     /// The body of this function (an expression).
     pub body: &'ctx Node<'ctx>,
@@ -608,7 +646,7 @@ impl<'ctx> Parser<'ctx> {
 
         Ok(self.mk_node(TranslationUnit {
             start:    self.ctx.file.start_loc(),
-            fn_decls: fn_decls
+            fn_decls: fn_decls,
         }))
     }
 
@@ -623,16 +661,10 @@ impl<'ctx> Parser<'ctx> {
         };
 
         p_match!(self, "`('", Sym("("));
-        let (args, mut args_t) = try!(self.parse_arg_list());
+        let args = try!(self.parse_arg_list());
         p_match!(self,
             if args.len() > 0 { "`,' or `)'" } else { "identifier or `)'" },
             Sym(")"));
-
-        let from = if args_t.len() == 1 {
-            args_t.pop().unwrap()
-        } else {
-            self.mk_type(Type::Tuple { elems: args_t })
-        };
 
         p_match!(self, "':'", Sym(":"));
         let to = try!(self.parse_type());
@@ -641,67 +673,55 @@ impl<'ctx> Parser<'ctx> {
         let body = try!(self.parse_expr());
         p_match!(self, "'}'", Sym("}"));
 
-        let ty = self.mk_type(Type::Func {
-            from: from,
-            to:   to,
-        });
-
         let fn_decl = self.mk_node(FnDecl {
             name: name,
             args: args,
+            to:   to,
             body: body,
         });
-
-        // Annotate the FnDecl node with the function's type, so we can find it later.
-        self.ctx.ty_map.insert(fn_decl, ty);
 
         Ok(fn_decl)
     }
 
     // ArgList = { VarDecl ',' } [ VarDecl ]
     fn parse_arg_list(&mut self)
-    -> error::Result<'ctx, (Vec<&'ctx Node<'ctx>>, Vec<&'ctx Type<'ctx>>)>
+    -> error::Result<'ctx, Vec<&'ctx Node<'ctx>>>
     {
         let mut args   = Vec::new();
-        let mut args_t = Vec::new();
         p_peek!(tok in self {
             // VarDecl
             Id(..) => {
                 while !p_delim!(self, Sym(")")) {
-                    try!(self.parse_var_decl(&mut args, &mut args_t));
+                    args.push(try!(self.parse_var_decl()));
                     if !p_delim!(self, Sym(",")) { break }
                 }
             }
         } else { () });
 
-        Ok((args, args_t))
+        Ok(args)
     }
 
-    fn parse_var_decl( &mut self
-                     , args: &mut Vec<&'ctx Node<'ctx>>
-                     , args_t: &mut Vec<&'ctx Type<'ctx>>
-                     )
-    -> error::Result<'ctx, ()>
+    fn parse_var_decl( &mut self)
+    -> error::Result<'ctx, &'ctx Node<'ctx>>
     {
-        let mut num_args = 1;
+        let mut names = Vec::new();
+
         let var_id = p_match!(self, "identifier", Id(..));
-        args.push(self.ident(var_id));
+        names.push(self.ident(var_id));
 
         while p_delim!(self, Sym(",")) {
-            num_args += 1;
             let var_id = p_match!(self, "identifier", Id(..));
-            args.push(self.ident(var_id));
+            names.push(self.ident(var_id));
         }
 
         p_match!(self, "`:'", Sym(":"));
 
         let ty = try!(self.parse_type());
 
-        for _ in 0..num_args {
-            args_t.push(ty);
-        }
-
-        Ok(())
+        Ok(self.mk_node(VarDecl {
+            names: names,
+            ty:    ty,
+        }))
     }
 
     // Type = 'int'
@@ -1088,6 +1108,7 @@ pub enum Node<'ctx> {
     Operator(Operator<'ctx>),
     TranslationUnit(TranslationUnit<'ctx>),
     FnDecl(FnDecl<'ctx>),
+    VarDecl(VarDecl<'ctx>),
     LogicOp(LogicOp<'ctx>),
     BinOp(BinOp<'ctx>),
     FnCall(FnCall<'ctx>),
@@ -1115,6 +1136,7 @@ impl<'ctx> GenNode<'ctx> for Node<'ctx> {
             &Operator(ref n)        => n.loc(),
             &TranslationUnit(ref n) => n.loc(),
             &FnDecl(ref n)          => n.loc(),
+            &VarDecl(ref n)         => n.loc(),
             &LogicOp(ref n)         => n.loc(),
             &BinOp(ref n)           => n.loc(),
             &FnCall(ref n)          => n.loc(),
@@ -1136,6 +1158,7 @@ impl<'ctx> GenNode<'ctx> for Node<'ctx> {
             &Operator(ref n)        => n.text(),
             &TranslationUnit(ref n) => n.text(),
             &FnDecl(ref n)          => n.text(),
+            &VarDecl(ref n)         => n.text(),
             &LogicOp(ref n)         => n.text(),
             &BinOp(ref n)           => n.text(),
             &FnCall(ref n)          => n.text(),
@@ -1161,6 +1184,7 @@ impl<'ctx> cats::Show for Node<'ctx> {
             &Operator(..)        => cat_len!("Operator"),
             &TranslationUnit(..) => cat_len!("TranslationUnit"),
             &FnDecl(..)          => cat_len!("FnDecl"),
+            &VarDecl(..)         => cat_len!("VarDecl"),
             &LogicOp(..)         => cat_len!("LogicOp"),
             &BinOp(..)           => cat_len!("BinOp"),
             &FnCall(..)          => cat_len!("FnCall"),
@@ -1182,6 +1206,7 @@ impl<'ctx> cats::Show for Node<'ctx> {
             &Operator(..)        => cat_write!(w, "Operator"),
             &TranslationUnit(..) => cat_write!(w, "TranslationUnit"),
             &FnDecl(..)          => cat_write!(w, "FnDecl"),
+            &VarDecl(..)         => cat_write!(w, "VarDecl"),
             &LogicOp(..)         => cat_write!(w, "LogicOp"),
             &BinOp(..)           => cat_write!(w, "BinOp"),
             &FnCall(..)          => cat_write!(w, "FnCall"),
