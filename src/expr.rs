@@ -20,7 +20,6 @@ use error;
 use syntax::{self, GenNode, Node, Ident};
 use semantic::Scope;
 use types::Type;
-use pattern::Pattern;
 
 /// The table used to annotate expression nodes with their type.
 pub type TypeMap<'ctx> = syntax::NodeMap<'ctx, &'ctx Type<'ctx>>;
@@ -158,7 +157,7 @@ impl<'ctx> Expr<'ctx> for syntax::IfExpr<'ctx> {
             try!(no.type_in(ctx, scope))
         } else {
             return Err(error::Error::Unsupported {
-                msg:  "if expressions without a corresponding else are currently unsupported",
+                msg:  "if-exprs without a corresponding else are currently unsupported",
                 site: self.if_loc,
             });
         };
@@ -182,19 +181,15 @@ impl<'ctx> Expr<'ctx> for syntax::IfExpr<'ctx> {
 
 
 impl<'ctx> Expr<'ctx> for syntax::LetExpr<'ctx> {
-    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, scope: &Scope<'ctx>)
+    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, _scope: &Scope<'ctx>)
     -> error::Result<'ctx, &'ctx Type<'ctx>>
     {
-        let val_t = try!(self.val.type_in(ctx, scope));
-
-        let expr_scope = if let Some(expr_scope) = ctx.scopes.get(self.body) {
-            expr_scope
-        } else {
-            let mut expr_scope = scope.child();
-            try!(self.pat.decl(val_t, ctx, &mut expr_scope));
-            ctx.scopes.insert(self.body, expr_scope.clone());
-
-            expr_scope
+        let expr_scope = match ctx.scopes.get(self.body) {
+            Some(expr_scope) => expr_scope,
+            None => return Err(error::Error::InternalError {
+                loc: Some(self.loc()),
+                msg: scat!("let-expr's body not annotated with scope"),
+            }),
         };
 
         self.body.type_in(ctx, &expr_scope)
