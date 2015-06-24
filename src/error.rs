@@ -21,6 +21,20 @@ use source::{self, Token};
 use syntax::{Node, GenNode, Ident};
 use types::Type;
 
+macro_rules! sl_err {
+    ($loc:expr, $($args:tt)*) => {
+        ecatln!(ERROR_PREFIX, ": ", $loc, ": ", MSG_BEGIN, $($args)*, MSG_END);
+        ecatln!($loc.in_context());
+    }
+}
+
+macro_rules! sl_info {
+    ($loc:expr, $($args:tt)*) => {
+        ecatln!(MSG_BEGIN, "info: ", $loc, ": ", $($args)*, MSG_END);
+        ecatln!($loc.in_context());
+    }
+}
+
 pub type Result<'ctx, T> = result::Result<T, Error<'ctx>>;
 
 pub enum Error<'ctx> {
@@ -50,15 +64,15 @@ pub enum Error<'ctx> {
         lhs_t: &'ctx Type<'ctx>,
         rhs_t: &'ctx Type<'ctx>,
     },
+    FnBodyTypeMismatch {
+        name:  &'ctx Ident<'ctx>,
+        exp_t: &'ctx Type<'ctx>,
+        got_t: &'ctx Type<'ctx>,
+    },
     FnArgTypeMismatch {
         arg:   &'ctx Node<'ctx>,
         exp_t: &'ctx Type<'ctx>,
         arg_t: &'ctx Type<'ctx>,
-    },
-    FnArgCountMismatch {
-        site: &'ctx Node<'ctx>,
-        exp:  usize,
-        got:  usize,
     },
     NonFnCalled {
         site: &'ctx Node<'ctx>,
@@ -107,82 +121,62 @@ impl<'ctx> Error<'ctx> {
 
         match self {
             &InternalError { loc: Some(loc), ref msg } => {
-                ecatln!(ERROR_PREFIX, ": ", loc, ": ", MSG_BEGIN, msg, MSG_END);
+                const INTERNAL_ERROR_PREFIX: &'static str = "\x1B[1m\x1B[31minternal compiler error\x1B[0m";
+
+                ecatln!(INTERNAL_ERROR_PREFIX, ": ", loc, ": ", MSG_BEGIN, msg, MSG_END);
                 ecatln!(loc.in_context());
             },
             &InternalError { loc: None, ref msg } => {
-                ecatln!(ERROR_PREFIX, ": ", MSG_BEGIN, msg, MSG_END);
+                const INTERNAL_ERROR_PREFIX: &'static str = "\x1B[1m\x1B[31minternal compiler error\x1B[0m";
+                ecatln!(INTERNAL_ERROR_PREFIX, ": ", MSG_BEGIN, msg, MSG_END);
             },
             &Syntax { ref exp, ref got } => {
-                ecatln!(ERROR_PREFIX, ": ", got.loc, ": ", MSG_BEGIN, "unexpected ", got.data,
-                    ", expecting ", exp, MSG_END);
-                ecatln!(got.loc.in_context());
+                sl_err!(got.loc, "unexpected ", got.data, ", expecting ", exp);
             },
             &EOF { ref exp } => {
                 ecatln!(ERROR_PREFIX, ": ", MSG_BEGIN, "unexpected EOF, expecting ", exp, MSG_END);
             },
             &AlreadyDeclared { decl, ident } => {
-                ecatln!(ERROR_PREFIX, ": ", ident.loc(), ": ", MSG_BEGIN, "variable '",
-                    ident.text(), "' already declared", MSG_END);
-                ecatln!(ident.loc().in_context());
+                sl_err!(ident.loc(), "variable `", ident.text(), "' already declared");
 
-                ecatln!(MSG_BEGIN, "info: ", decl.loc(), ": original declaration here",
-                    MSG_END);
-                ecatln!(decl.loc().in_context());
+                sl_info!(decl.loc(), "original declaration here");
             },
             &NotDeclared { ident } => {
-                ecatln!(ERROR_PREFIX, ": ", ident.loc(), ": variable '", ident.text(),
-                    "' not declared", MSG_END);
-                ecatln!(ident.loc().in_context());
+                sl_err!(ident.loc(), "variable `", ident.text(), "' not declared");
             },
             &BinOpTypeMismatch { op, lhs_t, rhs_t } => {
-                ecatln!(ERROR_PREFIX, ": ", op.loc(), ": type mismatch for operator `",
-                    op.text(), "' (`", lhs_t, "' != `", rhs_t, "')");
-                ecatln!(op.loc().in_context());
+                sl_err!(op.loc(),  "type mismatch for operator `", op.text(), "' ",
+                    "(`", lhs_t, "' != `", rhs_t, "')");
+            },
+            &FnBodyTypeMismatch { name, exp_t, got_t } => {
+                sl_err!(name.loc(), "wrong type for function body, declaration gives type `", exp_t,
+                    "', but body has type `", got_t, "'");
             },
             &FnArgTypeMismatch { arg, exp_t, arg_t } => {
-                ecatln!(ERROR_PREFIX, ": ", arg.loc(), ": wrong type for function ",
-                    "argument, expected `", exp_t, "', but argument has type `", arg_t, "'");
-                ecatln!(arg.loc().in_context());
+                sl_err!(arg.loc(), "wrong type for function argument, expected `", exp_t, "' but ",
+                    "argument has type `", arg_t, "'");
             },
-            &FnArgCountMismatch { site, exp, got } => {
-                ecatln!(ERROR_PREFIX, ": ", site.loc(), ": wrong number of arguments to ",
-                    "function, expected ", exp, " but got ", got);
-                ecatln!(site.loc().in_context());
-            }
             &NonFnCalled { site } => {
-                ecatln!(ERROR_PREFIX, ": ", site.loc(), ": attempt to call non-function ",
-                    "expression");
-                ecatln!(site.loc().in_context());
+                sl_err!(site.loc(), "attempt to call non-function expression");
             }
             &Unsupported { msg, site } => {
-                ecatln!(ERROR_PREFIX, ": ", site, ": ", msg);
-                ecatln!(site.in_context());
+                sl_err!(site, msg);
             }
             &IfElseTypeMismatch { if_loc, yes_t, no_t } => {
-                ecatln!(ERROR_PREFIX, ": ", if_loc, ": if/else branch types don't match (`", yes_t,
-                    "' != `", no_t, "')");
-                ecatln!(if_loc.in_context());
+                sl_err!(if_loc, "if/else branch types don't match (`", yes_t, "' != `", no_t, "')");
             }
             &IfCondNotBool { if_loc, cond_t } => {
-                ecatln!(ERROR_PREFIX, ": ", if_loc, ": if-expression condition isn't boolean ",
-                    "(type is `", cond_t, "')");
-                ecatln!(if_loc.in_context());
+                sl_err!(if_loc, "if-expression condition isn't boolean (type is `", cond_t, "')");
             }
             &LogicOperandNotBool { op_loc, op_t, operator } => {
-                ecatln!(ERROR_PREFIX, ": ", op_loc, ": operand to `", operator.text(), "' isn't ",
-                    "boolean (type is `", op_t, "')");
-                ecatln!(op_loc.in_context());
+                sl_err!(op_loc, "operand to `", operator.text(), "' isn't boolean (type is `", op_t,
+                    "')");
             }
             &PatternTypeMismatch { pat_loc, pat_desc, ty } => {
-                ecatln!(ERROR_PREFIX, ": ", pat_loc, ": cannot match type `", ty, "' against ",
-                    pat_desc);
-                ecatln!(pat_loc.in_context());
+                sl_err!(pat_loc, "cannot match type `", ty, "' against ", pat_desc);
             }
             &TuplePatternCountMismatch { pat_loc, ty } => {
-                ecatln!(ERROR_PREFIX, ": ", pat_loc, ": incorrect number of tuple elements for ",
-                    "type `", ty, "'");
-                ecatln!(pat_loc.in_context());
+                sl_err!(pat_loc, "incorrect number of tuple elements for type `", ty, "'");
             }
         }
     }
