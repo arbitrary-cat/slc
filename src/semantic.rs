@@ -150,6 +150,7 @@ impl<'ctx> Check<'ctx> for syntax::FnDecl<'ctx> {
     fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     {
+        // Count the number of arguments the function has
         let n_args = self.args.iter()
                               .fold(0, |n, &arg| {
                                   let var_decl: &syntax::VarDecl<'ctx> = arg.as_ref();
@@ -158,11 +159,8 @@ impl<'ctx> Check<'ctx> for syntax::FnDecl<'ctx> {
 
         let mut body_scope = scope.child();
 
-        let from = if n_args == 1 {
-            let arg0: &syntax::VarDecl<'ctx> = self.args[0].as_ref();
-            try!(body_scope.decl(arg0.names[0].as_ref(), arg0.ty));
-            arg0.ty
-        } else {
+        // Construct the function's argument type
+        let from = {
             let mut elems = Vec::with_capacity(n_args);
 
             for var_decl in self.args.iter().map(|a| -> &'ctx syntax::VarDecl<'ctx> { a.as_ref() }) {
@@ -175,7 +173,13 @@ impl<'ctx> Check<'ctx> for syntax::FnDecl<'ctx> {
             ctx.types.mk_type(Type::Tuple { elems: elems })
         };
 
+        // Declare the function in its parent scope.
+        let fn_t = ctx.types.mk_type(Type::Func { from: from, to: self.to });
+        try!(scope.decl(self.name.as_ref(), fn_t));
+
+        // Annotate the function body with its scope.
         ctx.scopes.insert(self.body, body_scope.clone());
+
 
         try!(self.body.check(ctx, &mut body_scope));
 
@@ -188,10 +192,6 @@ impl<'ctx> Check<'ctx> for syntax::FnDecl<'ctx> {
                  got_t: body_t,
             })
         }
-
-        let fn_t = ctx.types.mk_type(Type::Func { from: from, to: self.to });
-
-        try!(scope.decl(self.name.as_ref(), fn_t));
 
         Ok(())
     }
