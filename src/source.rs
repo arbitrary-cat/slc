@@ -222,7 +222,7 @@ impl<'src> Scanner<'src> {
             '(' | ')' | '{' | '}' | '+' | '-' | '*' |
             '/' | '%' | ',' | ':' | '>' | '<' | '=' |
             '!' | '|' | '&' => {
-                Some(self.scan_operator(loc, beg, start))
+                self.scan_operator(loc, beg, start)
             }
             _                                 => unreachable!(),
         }
@@ -249,8 +249,21 @@ impl<'src> Scanner<'src> {
         }
     }
 
-    fn scan_operator(&mut self, loc: Loc<'src>, beg: usize, start: char) -> Token<'src> {
+    fn scan_operator(&mut self, loc: Loc<'src>, beg: usize, start: char) -> Option<Token<'src>> {
         let end = match start {
+            '/' => match self.ch_ind.peek() {
+                Some(&(_, '/')) => {
+                    for (_, c) in self.ch_ind.by_ref() {
+                        if c == '\n' { break }
+                    }
+
+                    self.advance('\n');
+
+                    // We've iterated through all remaining characters, this comment goes to EOF.
+                    return None;
+                },
+                _                 => beg + start.len_utf8(),
+            },
             '-' => match self.ch_ind.peek() {
                 Some(&(idx, '>')) => {
                     self.advance('>');
@@ -282,11 +295,11 @@ impl<'src> Scanner<'src> {
             _  => beg + start.len_utf8(),
         };
 
-        Token {
+        Some(Token {
             comment: None,
             data:    TokenData::Sym(&self.src[beg..end]),
             loc:     loc,
-        }
+        })
     }
 
     fn scan_ident(&mut self, loc: Loc<'src>, beg: usize, start: char) -> Token<'src> {
