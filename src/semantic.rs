@@ -124,6 +124,7 @@ impl<'ctx> Check<'ctx> for syntax::Node<'ctx> {
             &Tuple(ref tuple)                      => tuple.check(ctx, scope),
             &FnCall(ref fn_call)                   => fn_call.check(ctx, scope),
             &IfExpr(ref if_expr)                   => if_expr.check(ctx, scope),
+            &IntLit(ref int_lit)                   => int_lit.check(ctx, scope),
 
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
@@ -301,5 +302,13 @@ impl<'ctx> Check<'ctx> for syntax::IfExpr<'ctx> {
                 no_t:   no_t,
             })
         } else { Ok(()) }
+    }
+}
+
+impl <'ctx> Check<'ctx> for syntax::IntLit<'ctx> {
+    fn check(&'ctx self, _ctx: CtxRef<'ctx>, _scope: &mut Scope<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        Ok(())
     }
 }
