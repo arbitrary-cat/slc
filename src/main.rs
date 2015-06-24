@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use sl::compiler;
 use sl::source;
 use sl::syntax;
+use sl::semantic::{self, Check};
 
 macro_rules! main_try {
     ($x:expr) => {
@@ -52,8 +53,10 @@ pub fn main() {
     let ctx = compiler::Context::new(&file);
 
     let res_tu = syntax::parse(&ctx);
+
+    let mut global = semantic::Scope::new();
     
-    main_try!(res_tu);
+    main_try!(main_try!(res_tu).check(&ctx, &mut global));
 
     path.set_extension("c");
     fs::File::create(&path).unwrap();
