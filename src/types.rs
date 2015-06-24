@@ -48,7 +48,15 @@ impl<'ctx> Context<'ctx> {
         }
     }
 
-    pub fn mk_type(&'ctx self, t: Type<'ctx>) -> &'ctx Type<'ctx> {
+    /// Create a new type in the given context. This function will convert 1-element tuple types
+    /// into scalars (since the language does not distinguish, but it's easier to encapsulate the
+    /// special-case code here rather everywhere that might produce a 1-element tuple).
+    pub fn mk_type(&'ctx self, mut t: Type<'ctx>) -> &'ctx Type<'ctx> {
+        match t {
+            Type::Tuple { ref mut elems } if (elems.len() == 1) => return elems.pop().unwrap(),
+            _ => (),
+        }
+
         let x = self.dedup.borrow().get(&t).cloned();
 
         match x {
