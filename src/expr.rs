@@ -111,14 +111,17 @@ impl<'ctx> Expr<'ctx> for syntax::BinOp<'ctx> {
         let rhs_t = try!(self.rhs.type_in(ctx, scope));
 
         if lhs_t != rhs_t {
-            Err(error::Error::BinOpTypeMismatch {
+            return Err(error::Error::BinOpTypeMismatch {
                 op:    self.op,
                 lhs_t: lhs_t,
                 rhs_t: rhs_t,
             })
-        } else {
-            Ok(lhs_t)
         }
+
+        Ok(match self.op.text() {
+            "<" | ">" | "<=" | ">=" | "==" | "!=" => ctx.types.mk_type(Type::Bool),
+            _                                     => lhs_t,
+        })
     }
 }
 
