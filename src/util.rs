@@ -16,8 +16,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use std::cell::RefCell;
+use std::cmp;
 use std::collections::HashMap;
 use std::marker;
+use std::mem;
 
 /// A table which maps from pointers of one type to values of another. The pointers are compared by
 /// address, not by the comparison methods of their underlying type.
@@ -55,5 +57,49 @@ where V: Clone,
     -> Option<V>
     {
         self.map.borrow().get(&(key as *const K)).cloned()
+    }
+}
+
+// This number of bytes of space will be allocated at a time by StrArena.
+const STR_MAX_CAP: usize = 2048;
+
+/// An arena from which static strings can be allocated.
+pub struct StrArena {
+    // No String in this buffer can be allowed to reallocate, since we're handing out pointers into
+    // them with the same lifetime as `self`.
+    buffers: RefCell<Vec<String>>,
+}
+
+impl StrArena {
+    pub fn new() -> StrArena {
+        StrArena { buffers: RefCell::new(Vec::new()) }
+    }
+
+    pub fn alloc<'i, 'o>(&'o self, s: &'i str) -> &'o str {
+        // This needs to be stored as a temporary so that we don't do nested `.borrow_mut()`s.
+        let no_reallocs = self.buffers.borrow_mut().last_mut()
+                        .and_then(|buf| {
+                            if buf.capacity() - buf.len() < s.len() {
+                                // If this string would overflow `buf`, then we need to allocate a new
+                                // buffer instead.
+                                None
+                            } else {
+                                let beg = buf.len();
+                                buf.push_str(s);
+
+                                Some(unsafe {
+                                    // We know for a fact that buf will live as long as self, so we
+                                    // can safely swap the lifetimes.
+                                    mem::transmute::<&str, &'o str>(&buf[beg..])
+                                })
+                            }
+                        });
+
+        no_reallocs.unwrap_or_else(|| {
+            self.buffers.borrow_mut()
+                        .push(String::with_capacity(cmp::max(s.len(), STR_MAX_CAP)));
+
+            self.alloc(s)
+        })
     }
 }
