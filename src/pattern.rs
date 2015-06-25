@@ -23,7 +23,8 @@ use types::Type;
 
 
 pub trait Pattern<'ctx> {
-    /// Declare in `scope` all identifiers introduced by a pattern to which `expr` will be assigned.
+    /// Declare in `scope` all identifiers introduced by a pattern to which an expression of type
+    /// `ty` will be assigned.
     fn decl(&'ctx self, ty: &'ctx Type<'ctx>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     ;

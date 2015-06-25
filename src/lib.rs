@@ -29,20 +29,18 @@ pub fn say_hi() {
 #[macro_use]
 mod macros;
 
-/// Tokenization and location tracking for source files.
-pub mod source;
-
-pub mod syntax;
-
 pub mod error;
 
 pub mod expr;
 
-pub mod semantic;
-
 pub mod pattern;
 
-// pub mod codegen;
+pub mod semantic;
+
+/// Tokenization and location tracking for source files.
+pub mod source;
+
+pub mod syntax;
 
 pub mod types;
 

@@ -177,6 +177,10 @@ impl<'ctx> GenNode<'ctx> for TranslationUnit<'ctx> {
 /// A list of variables being declared by name.
 pub struct VarDecl<'ctx> {
     /// Identifiers which name the variables being declared.
+    ///
+    /// # Invariants
+    ///
+    /// `self.names.len() != 0`
     pub names: Vec<&'ctx Node<'ctx>>,
 
     /// The type of the variables being declared.
