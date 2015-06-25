@@ -251,7 +251,8 @@ impl<'ctx> Check<'ctx> for syntax::FnCall<'ctx> {
 
         let from_t = match try!(self.fun.type_in(ctx, scope)) {
             &Type::Func { from, .. } => from,
-            _ => return Err(error::Error::NonFnCalled {
+            ty => return Err(error::Error::NonFnCalled {
+                ty:   ty,
                 site: self.fun,
             }),
         };

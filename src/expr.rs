@@ -131,21 +131,26 @@ impl<'ctx> Expr<'ctx> for syntax::FnCall<'ctx> {
     fn type_in(&'ctx self, ctx: CtxRef<'ctx>, scope: &Scope<'ctx>)
     -> error::Result<'ctx, &'ctx Type<'ctx>>
     {
-        if let &Type::Func { from, to } = try!(self.fun.type_in(ctx, scope)) {
-            let arg_t = try!(self.arg.type_in(ctx, scope));
-            if from != arg_t {
-                // The function's argument is of the wrong type.
-                Err(error::Error::FnArgTypeMismatch {
-                    arg:   self.arg,
-                    exp_t: from,
-                    arg_t: arg_t,
-                })
-            } else {
-                Ok(to)
+        match try!(self.fun.type_in(ctx, scope)) {
+            &Type::Func { from, to } => {
+                let arg_t = try!(self.arg.type_in(ctx, scope));
+                if from != arg_t {
+                    // The function's argument is of the wrong type.
+                    Err(error::Error::FnArgTypeMismatch {
+                        arg:   self.arg,
+                        exp_t: from,
+                        arg_t: arg_t,
+                    })
+                } else {
+                    Ok(to)
+                } 
             }
-        } else {
+
             // `fun` isn't a function.
-            Err(error::Error::NonFnCalled { site: self.fun })
+            ty => Err(error::Error::NonFnCalled {
+                ty:   ty,
+                site: self.fun,
+            })
         }
     }
 }

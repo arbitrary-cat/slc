@@ -75,6 +75,7 @@ pub enum Error<'ctx> {
         arg_t: &'ctx Type<'ctx>,
     },
     NonFnCalled {
+        ty:   &'ctx Type<'ctx>,
         site: &'ctx Node<'ctx>,
     },
     Unsupported {
@@ -156,8 +157,8 @@ impl<'ctx> Error<'ctx> {
                 sl_err!(arg.loc(), "wrong type for function argument, expected `", exp_t, "' but ",
                     "argument has type `", arg_t, "'");
             },
-            &NonFnCalled { site } => {
-                sl_err!(site.loc(), "attempt to call non-function expression");
+            &NonFnCalled { site, ty } => {
+                sl_err!(site.loc(), "attempt to call non-function expression (has type `", ty, "')");
             }
             &Unsupported { msg, site } => {
                 sl_err!(site, msg);
