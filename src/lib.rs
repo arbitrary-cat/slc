@@ -46,6 +46,8 @@ pub mod pattern;
 
 pub mod types;
 
+pub mod util;
+
 pub mod compiler {
     use expr;
     use semantic;

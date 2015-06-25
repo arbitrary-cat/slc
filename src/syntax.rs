@@ -18,8 +18,6 @@
 // The parser macros sometimes create unused variables
 #![allow(unused_variables)]
 
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::convert::Into;
 use std::io;
 use std::mem;
@@ -1065,39 +1063,6 @@ where String: From<S>
         Err(error::Error::EOF { exp: String::from(exp) })
     }
 }
-
-/// A table which maps node-pointers to objects of type `T`. The `T`s are operated on by-value
-/// (ideally `T` will be `&'ctx U` for some arena-allocated type `U`), so `T` must implement `Copy`.
-pub struct NodeMap<'ctx, T>
-where T: Clone,
-{
-    map: RefCell<HashMap<*const Node<'ctx>, T>>,
-}
-
-impl<'ctx, T> NodeMap<'ctx, T>
-where T: Clone,
-{
-    pub fn new()
-    -> NodeMap<'ctx, T>
-    {
-        NodeMap { map: RefCell::new(HashMap::new()) }
-    }
-
-    /// Insert an element into the table. If there was already an element stored at that key, it
-    /// will be replaced with the new value, and the old value will be returned.
-    pub fn insert(&self, key: &Node<'ctx>, val: T)
-    -> Option<T>
-    {
-        self.map.borrow_mut().insert(key as *const Node<'ctx>, val)
-    }
-
-    pub fn get(&self, key: &Node<'ctx>)
-    -> Option<T>
-    {
-        self.map.borrow().get(&(key as *const Node<'ctx>)).cloned()
-    }
-}
-
 
 /// A node in the syntax tree. This enum wraps each possible node type to allow for a sort of
 /// reflection. The `Node` type provides all caching and annotation methods on top of the individual
