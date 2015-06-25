@@ -253,14 +253,13 @@ impl<'src> Scanner<'src> {
         let end = match start {
             '/' => match self.ch_ind.peek() {
                 Some(&(_, '/')) => {
-                    for (_, c) in self.ch_ind.by_ref() {
+                    while let Some(&(_, c)) = self.ch_ind.peek() {
+                        self.advance(c);
                         if c == '\n' { break }
                     }
 
-                    self.advance('\n');
-
                     // We've iterated through all remaining characters, this comment goes to EOF.
-                    return None;
+                    return self.next();
                 },
                 _                 => beg + start.len_utf8(),
             },
