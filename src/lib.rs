@@ -29,6 +29,8 @@ pub fn say_hi() {
 #[macro_use]
 mod macros;
 
+pub mod codegen;
+
 pub mod error;
 
 pub mod expr;

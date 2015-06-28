@@ -22,6 +22,7 @@ use std::env;
 use std::path::PathBuf;
 
 use sl::compiler;
+use sl::codegen::{self, EmitC};
 use sl::source;
 use sl::syntax;
 use sl::semantic::{self, Check};
@@ -52,12 +53,18 @@ pub fn main() {
 
     let ctx = compiler::Context::new(&file);
 
-    let res_tu = syntax::parse(&ctx);
+    let tu = main_try!(syntax::parse(&ctx));
 
     let mut global = semantic::Scope::new();
     
-    main_try!(main_try!(res_tu).check(&ctx, &mut global));
+    main_try!(tu.check(&ctx, &mut global));
+
+    let mut cbuf = codegen::CBuffer::new();
+
+    main_try!(tu.emit(&ctx, &mut cbuf));
 
     path.set_extension("c");
-    fs::File::create(&path).unwrap();
+    let mut c_file = fs::File::create(&path).unwrap();
+
+    cbuf.write(&mut c_file).ok();
 }
