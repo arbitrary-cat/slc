@@ -61,7 +61,11 @@ impl<'ctx> Context<'ctx> {
 
         match x {
             Some(ty) => ty,
-            None     => self.mem.alloc(t),
+            None     => {
+                let ty = self.mem.alloc(t);
+                self.dedup.borrow_mut().insert(ty, ty);
+                ty
+            }
         }
     }
 }
