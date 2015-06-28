@@ -23,7 +23,7 @@ use types::Type;
 use util;
 
 /// The table used to annotate expression nodes with their type.
-pub type TypeMap<'ctx> = util::PtrMap<'ctx, Node<'ctx>, &'ctx Type<'ctx>>;
+pub type TypeMap<'ctx> = util::TagMap<'ctx, &'ctx Type<'ctx>>;
 
 /// A trait for types that can be an expression in the syntax tree.
 pub trait Expr<'ctx> {

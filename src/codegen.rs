@@ -25,9 +25,9 @@ use util;
 
 const PREFIX: &'static str = "SL";
 
-type TempMap<'ctx> = util::PtrMap<'ctx, Node<'ctx>, &'ctx str>;
+type TempMap<'ctx> = util::TagMap<'ctx, &'ctx str>;
 
-type TypedefMap<'ctx> = util::PtrMap<'ctx, Type<'ctx>, &'ctx str>;
+type TypedefMap<'ctx> = util::TagMap<'ctx, &'ctx str>;
 
 /// A buffer which can be used to build a C file.
 pub struct CBuffer<'ctx> {

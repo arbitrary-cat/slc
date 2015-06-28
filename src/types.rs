@@ -19,6 +19,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
 
+use util;
+
 use arena::TypedArena;
 use cats;
 
@@ -34,6 +36,8 @@ pub enum Type<'ctx> {
         elems: Vec<&'ctx Type<'ctx>>,
     },
 }
+
+impl<'ctx> util::Tagged<'ctx> for Type<'ctx> {}
 
 pub struct Context<'ctx> {
     mem:   TypedArena<Type<'ctx>>,

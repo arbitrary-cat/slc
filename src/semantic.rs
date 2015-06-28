@@ -100,7 +100,7 @@ impl<'ctx> Scope<'ctx> {
 ///
 /// This is kind of sketchy at the moment, which nodes should be annotated with scopes? Right now
 /// we're just doing function bodies and let-expr bodies.
-pub type ScopeMap<'ctx> = util::PtrMap<'ctx, syntax::Node<'ctx>, Scope<'ctx>>;
+pub type ScopeMap<'ctx> = util::TagMap<'ctx, Scope<'ctx>>;
 
 /// A trait for nodes that can be checked for semantic validity.
 pub trait Check<'ctx> {

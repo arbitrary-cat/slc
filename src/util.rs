@@ -21,42 +21,78 @@ use std::collections::HashMap;
 use std::marker;
 use std::mem;
 
-/// A table which maps from pointers of one type to values of another. The pointers are compared by
-/// address, not by the comparison methods of their underlying type.
-///
-/// This type is intended for use with key-objects allocated from the same `TypedArena`.
-pub struct PtrMap<'ctx, K, V>
-where V: Clone,
-{
-    map: RefCell<HashMap<*const K, V>>,
+/// A tag which refers to an object by an internal address. Used to uniquely identify items
+/// allocated from the same arena.
+#[derive(Copy,Clone,Hash,PartialEq,Eq)]
+pub struct Tag<'ctx> {
+    id:     usize,
 
     _lifetime: marker::PhantomData<&'ctx ()>
 }
 
-impl<'ctx, K, V> PtrMap<'ctx, K, V>
-where V: Clone,
-{
-    pub fn new()
-    -> PtrMap<'ctx, K, V>
+impl<'ctx> Tag<'ctx> {
+    /// Create a new tag from a pointer.
+    ///
+    /// Lifetimes let us guarantee that these will be unique. In theory a struct and its first field
+    /// could overlap, or other cases like that. *Don't do that!* You'll end up with non-unique IDs.
+    pub fn new<T>(t: &'ctx T)
+    -> Tag<'ctx>
     {
-        PtrMap {
-            map: RefCell::new(HashMap::new()),
+        Tag {
+            id:        unsafe { mem::transmute::<&'ctx T, usize>(t) },
             _lifetime: marker::PhantomData,
         }
+    }
+}
+
+/// A trait for types whose addresses can be converted into a tag which is unique for that pointer's
+/// lifetime.
+pub trait Tagged<'ctx> {
+    /// The default implementation of `tag` just converts the object's address into a tag directly.
+    /// For an example where you'd want to use a different implementation, see `syntax::Node`'s
+    /// (`syntax::Node` is the reason that the `Tag` type exists =P).
+    fn tag(&'ctx self)
+    -> Tag<'ctx>
+    where Self: Sized
+    {
+        Tag {
+            id:        unsafe { mem::transmute::<&'ctx Self, usize>(self) },
+            _lifetime: marker::PhantomData,
+        }
+    }
+}
+
+/// A table which maps from `Tag`s to arbitrary objects. Used for annotating nodes in the syntax
+/// tree.
+pub struct TagMap<'ctx, T>
+where T: Clone,
+{
+    map: RefCell<HashMap<Tag<'ctx>, T>>,
+}
+
+impl<'ctx, T> TagMap<'ctx, T>
+where T: Clone,
+{
+    pub fn new()
+    -> TagMap<'ctx, T>
+    {
+        TagMap { map: RefCell::new(HashMap::new()) }
     }
 
     /// Insert an element into the table. If there was already an element stored at that key, it
     /// will be replaced with the new value, and the old value will be returned.
-    pub fn insert(&self, key: &'ctx K, val: V)
-    -> Option<V>
+    pub fn insert<K>(&self, key: &'ctx K, val: T)
+    -> Option<T>
+    where K: Tagged<'ctx>,
     {
-        self.map.borrow_mut().insert(key as *const K, val)
+        self.map.borrow_mut().insert(key.tag(), val)
     }
 
-    pub fn get(&self, key: &'ctx K)
-    -> Option<V>
+    pub fn get<K>(&self, key: &'ctx K)
+    -> Option<T>
+    where K: Tagged<'ctx>,
     {
-        self.map.borrow().get(&(key as *const K)).cloned()
+        self.map.borrow().get(&key.tag()).cloned()
     }
 }
 

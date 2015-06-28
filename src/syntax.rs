@@ -29,6 +29,7 @@ use error;
 use source;
 use source::TokenData::*;
 use types::Type;
+use util;
 
 use arena::TypedArena;
 
@@ -38,6 +39,8 @@ pub struct Ident<'ctx> {
     /// The token which corresponds to this identifier in the source.
     pub tok: source::Token<'ctx>,
 }
+
+impl<'ctx> util::Tagged<'ctx> for Ident<'ctx> {}
 
 impl<'ctx> AsRef<Ident<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &Ident<'ctx> {
@@ -75,6 +78,8 @@ pub struct IntLit<'ctx> {
     pub tok: source::Token<'ctx>,
 }
 
+impl<'ctx> util::Tagged<'ctx> for IntLit<'ctx> {}
+
 impl<'ctx> AsRef<IntLit<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &IntLit<'ctx> {
         match self {
@@ -107,6 +112,8 @@ pub struct Operator<'ctx> {
     /// The token which corresponds to this operator in the source.
     pub tok: source::Token<'ctx>,
 }
+
+impl<'ctx> util::Tagged<'ctx> for Operator<'ctx> {}
 
 impl<'ctx> AsRef<Operator<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &Operator<'ctx> {
@@ -147,6 +154,8 @@ pub struct TranslationUnit<'ctx> {
     pub fn_decls: Vec<&'ctx Node<'ctx>>,
 }
 
+impl<'ctx> util::Tagged<'ctx> for TranslationUnit<'ctx> {}
+
 impl<'ctx> AsRef<TranslationUnit<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &TranslationUnit<'ctx> {
         match self {
@@ -186,6 +195,8 @@ pub struct VarDecl<'ctx> {
     /// The type of the variables being declared.
     pub ty: &'ctx Type<'ctx>,
 }
+
+impl<'ctx> util::Tagged<'ctx> for VarDecl<'ctx> {}
 
 impl<'ctx> AsRef<VarDecl<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &VarDecl<'ctx> {
@@ -229,6 +240,8 @@ pub struct FnDecl<'ctx> {
     pub body: &'ctx Node<'ctx>,
 }
 
+impl<'ctx> util::Tagged<'ctx> for FnDecl<'ctx> {}
+
 impl<'ctx> AsRef<FnDecl<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &FnDecl<'ctx> {
         match self {
@@ -267,6 +280,8 @@ pub struct LogicOp<'ctx> {
     /// The expression which will be tested second. Must have type `Bool`.
     pub second: &'ctx Node<'ctx>,
 }
+
+impl<'ctx> util::Tagged<'ctx> for LogicOp<'ctx> {}
 
 impl<'ctx> AsRef<LogicOp<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &LogicOp<'ctx> {
@@ -308,6 +323,8 @@ pub struct BinOp<'ctx> {
     pub rhs: &'ctx Node<'ctx>,
 }
 
+impl<'ctx> util::Tagged<'ctx> for BinOp<'ctx> {}
+
 impl<'ctx> AsRef<BinOp<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &BinOp<'ctx> {
         match self {
@@ -344,6 +361,8 @@ pub struct FnCall<'ctx> {
     /// The argument to this function.
     pub arg: &'ctx Node<'ctx>,
 }
+
+impl<'ctx> util::Tagged<'ctx> for FnCall<'ctx> {}
 
 impl<'ctx> AsRef<FnCall<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &FnCall<'ctx> {
@@ -388,6 +407,8 @@ pub struct IfExpr<'ctx> {
     pub no: Option<&'ctx Node<'ctx>>,
 }
 
+impl<'ctx> util::Tagged<'ctx> for IfExpr<'ctx> {}
+
 impl<'ctx> AsRef<IfExpr<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &IfExpr<'ctx> {
         match self {
@@ -424,6 +445,8 @@ pub struct Tuple<'ctx> {
     /// The elements of the tuple (expressions).
     pub elems: Vec<&'ctx Node<'ctx>>,
 }
+
+impl<'ctx> util::Tagged<'ctx> for Tuple<'ctx> {}
 
 impl<'ctx> AsRef<Tuple<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &Tuple<'ctx> {
@@ -468,6 +491,8 @@ pub struct LetExpr<'ctx> {
     pub body: &'ctx Node<'ctx>,
 }
 
+impl<'ctx> util::Tagged<'ctx> for LetExpr<'ctx> {}
+
 impl<'ctx> AsRef<LetExpr<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &LetExpr<'ctx> {
         match self {
@@ -503,6 +528,8 @@ pub struct TuplePattern<'ctx> {
     /// Patterns for each element of the tuple.
     pub elems:  Vec<&'ctx Node<'ctx>>,
 }
+
+impl<'ctx> util::Tagged<'ctx> for TuplePattern<'ctx> {}
 
 impl<'ctx> AsRef<TuplePattern<'ctx>> for Node<'ctx> {
     fn as_ref(&self) -> &TuplePattern<'ctx> {
@@ -1187,3 +1214,26 @@ impl<'ctx> cats::Show for Node<'ctx> {
     }
 }
 
+impl<'ctx> util::Tagged<'ctx> for Node<'ctx> {
+    fn tag(&'ctx self)
+    -> util::Tag<'ctx>
+    {
+        use self::Node::*;
+
+        match self {
+            &Ident(ref n)           => n.tag(),
+            &IntLit(ref n)          => n.tag(),
+            &Operator(ref n)        => n.tag(),
+            &TranslationUnit(ref n) => n.tag(),
+            &FnDecl(ref n)          => n.tag(),
+            &VarDecl(ref n)         => n.tag(),
+            &LogicOp(ref n)         => n.tag(),
+            &BinOp(ref n)           => n.tag(),
+            &FnCall(ref n)          => n.tag(),
+            &IfExpr(ref n)          => n.tag(),
+            &LetExpr(ref n)         => n.tag(),
+            &Tuple(ref n)           => n.tag(),
+            &TuplePattern(ref n)    => n.tag(),
+        }
+    }
+}
