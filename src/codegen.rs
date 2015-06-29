@@ -30,6 +30,12 @@ type TempMap<'ctx> = util::TagMap<'ctx, &'ctx str>;
 type TypedefMap<'ctx> = util::TagMap<'ctx, &'ctx str>;
 
 /// A buffer which can be used to build a C file.
+///
+/// # Notes
+///
+/// Right now the design here is a bit sketchy, the type is `pub`, but none of the fields are (so
+/// you can't really build a C file outside the `codegen` module right now). We can try to fix this
+/// later when it becomes clear *how* and *why* we'd want to do that.
 pub struct CBuffer<'ctx> {
     next_uniq: usize,
 
@@ -51,52 +57,8 @@ pub struct CBuffer<'ctx> {
 
     // Text for C function implementations (the actual code!).
     fn_impls_txt: Vec<u8>,
-}
 
-impl<'ctx> Type<'ctx> {
-    // Emit a C-syntax typedef to the typedefs_txt section.
-    fn emit_typedef(&'ctx self, td: &str, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
-    -> error::Result<'ctx, ()>
-    {
-        fcatln!(c.typedefs_txt,"// ", self).ok();
-        match self {
-            &Type::Func { from, to } => {
-                let ret_t = try!(c.typedef(ctx, to));
-                fcat!(c.typedefs_txt, "typedef ", ret_t, " (*", td, ")(").ok();
-                match from {
-                    &Type::Tuple { ref elems } => {
-                        let mut args_t = Vec::with_capacity(elems.len());
-                        for &elem in elems.iter() {
-                            args_t.push(try!(c.typedef(ctx, elem)))
-                        }
-
-                        for (idx, &arg_t) in args_t.iter().enumerate() {
-                            fcat!(c.typedefs_txt, if idx > 0 { ", " } else { "" }, arg_t).ok();
-                        }
-                    }
-                    ty => {
-                        let c_name = try!(c.typedef(ctx, ty));
-                        fcat!(c.typedefs_txt, c_name).ok();
-                    },
-                }
-                fcatln!(c.typedefs_txt, ");\n").ok();
-            }
-            &Type::Tuple { ref elems } => {
-                fcatln!(c.typedefs_txt, "typedef struct ", td, " {\n").ok();
-                for (idx, &elem) in elems.iter().enumerate() {
-                    let elem_t = try!(c.typedef(ctx, elem));
-                    fcatln!(c.typedefs_txt, "\t// ", elem_t).ok();
-                    fcatln!(c.typedefs_txt, "\t", elem_t, " _", idx, ";\n").ok();
-                }
-                fcatln!(c.typedefs_txt, "} ", td, ";\n").ok();
-            }
-            &Type::Int | &Type::Bool => {
-                fcatln!(c.typedefs_txt, "typedef int ", td, ";\n").ok();
-            }
-        }
-
-        Ok(())
-    }
+    indent: String,
 }
 
 impl<'ctx> CBuffer<'ctx> {
@@ -111,7 +73,17 @@ impl<'ctx> CBuffer<'ctx> {
             typedefs_txt:  Vec::new(),
             fn_protos_txt: Vec::new(),
             fn_impls_txt:  Vec::new(),
+            indent:        String::new(),
         }
+    }
+
+    pub fn inc_indent(&mut self) {
+        self.indent.push('\t');
+    }
+
+
+    pub fn dec_indent(&mut self) {
+        self.indent.pop();
     }
 
     pub fn write<W: io::Write>(&self, w: &mut W)
@@ -161,6 +133,72 @@ impl<'ctx> CBuffer<'ctx> {
 
         Ok(name)
     }
+
+
+    /// Return a unique temporary name, associated with this expression. `temp_for` always returns
+    /// the same string for the same expression.
+    pub fn temp_for<E>(&mut self, hint: &str, ctx: CtxRef<'ctx>, expr: &'ctx E)
+    -> &'ctx str
+    where E: util::Tagged<'ctx>
+    {
+        if let Some(tmp) = self.tmp_map.get(expr) {
+            tmp
+        } else {
+            self.scratch.clear();
+            let uniq = self.get_uniq();
+            strcat!(self.scratch, PREFIX, hint, uniq);
+            let name = ctx.strings.alloc(&self.scratch[..]);
+            self.tmp_map.insert(expr, name);
+
+            name
+        }
+    }
+}
+
+impl<'ctx> Type<'ctx> {
+    // Emit a C-syntax typedef to the typedefs_txt section.
+    fn emit_typedef(&'ctx self, td: &str, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        fcatln!(c.typedefs_txt,"// ", self).ok();
+        match self {
+            &Type::Func { from, to } => {
+                let ret_t = try!(c.typedef(ctx, to));
+                fcat!(c.typedefs_txt, "typedef ", ret_t, " (*", td, ")(").ok();
+                match from {
+                    &Type::Tuple { ref elems } => {
+                        let mut args_t = Vec::with_capacity(elems.len());
+                        for &elem in elems.iter() {
+                            args_t.push(try!(c.typedef(ctx, elem)))
+                        }
+
+                        for (idx, &arg_t) in args_t.iter().enumerate() {
+                            fcat!(c.typedefs_txt, if idx > 0 { ", " } else { "" }, arg_t).ok();
+                        }
+                    }
+                    ty => {
+                        let c_name = try!(c.typedef(ctx, ty));
+                        fcat!(c.typedefs_txt, c_name).ok();
+                    },
+                }
+                fcatln!(c.typedefs_txt, ");\n").ok();
+            }
+            &Type::Tuple { ref elems } => {
+                fcatln!(c.typedefs_txt, "typedef struct ", td, " {\n").ok();
+                for (idx, &elem) in elems.iter().enumerate() {
+                    let elem_t = try!(c.typedef(ctx, elem));
+                    fcatln!(c.typedefs_txt, "\t// ", elem_t).ok();
+                    fcatln!(c.typedefs_txt, "\t", elem_t, " _", idx, ";\n").ok();
+                }
+                fcatln!(c.typedefs_txt, "} ", td, ";\n").ok();
+            }
+            &Type::Int | &Type::Bool => {
+                fcatln!(c.typedefs_txt, "typedef int ", td, ";\n").ok();
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// A trait for nodes which can be emitted as C code.
@@ -191,6 +229,12 @@ impl<'ctx> EmitC<'ctx> for syntax::Node<'ctx> {
         match self {
             &TranslationUnit(ref translation_unit) => translation_unit.depends(ctx, c),
             &FnDecl(ref fn_decl)                   => fn_decl.depends(ctx, c),
+            &BinOp(ref bin_op)                     => bin_op.depends(ctx, c),
+            &Ident(ref ident)                      => ident.depends(ctx, c),
+            &Tuple(ref tuple)                      => tuple.depends(ctx, c),
+            &FnCall(ref fn_call)                   => fn_call.depends(ctx, c),
+            &IfExpr(ref if_expr)                   => if_expr.depends(ctx, c),
+            &IntLit(ref int_lit)                   => int_lit.depends(ctx, c),
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
                 msg: scat!("Node type `", self, "' cannot be emitted as C."),
@@ -214,6 +258,12 @@ impl<'ctx> EmitC<'ctx> for syntax::Node<'ctx> {
         match self {
             &TranslationUnit(ref translation_unit) => translation_unit.emit(ctx, c),
             &FnDecl(ref fn_decl)                   => fn_decl.emit(ctx, c),
+            &BinOp(ref bin_op)                     => bin_op.emit(ctx, c),
+            &Ident(ref ident)                      => ident.emit(ctx, c),
+            &Tuple(ref tuple)                      => tuple.emit(ctx, c),
+            &FnCall(ref fn_call)                   => fn_call.emit(ctx, c),
+            &IfExpr(ref if_expr)                   => if_expr.emit(ctx, c),
+            &IntLit(ref int_lit)                   => int_lit.emit(ctx, c),
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
                 msg: scat!("Node type `", self, "' cannot be emitted as C."),
@@ -289,12 +339,231 @@ impl<'ctx> EmitC<'ctx> for syntax::FnDecl<'ctx> {
 
         try!(self.print_sig(SigLoc::Impl, ctx, c));
         fcatln!(c.fn_impls_txt, " {").ok();
+        c.inc_indent();
         try!(self.body.depends(ctx, c));
 
-        fcatln!(c.fn_impls_txt, "\treturn ").ok();
+        fcat!(c.fn_impls_txt, c.indent, "return ").ok();
         try!(self.body.emit(ctx, c));
 
-        fcatln!(c.fn_impls_txt, ";\n}\n").ok();
+        c.dec_indent();
+        fcatln!(c.fn_impls_txt, ";\n", c.indent, "}\n").ok();
+
+        Ok(())
+    }
+}
+
+impl<'ctx> EmitC<'ctx> for syntax::BinOp<'ctx> {
+    fn depends(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        try!(self.lhs.depends(ctx, c));
+        try!(self.rhs.depends(ctx, c));
+
+        Ok(())
+    }
+
+    fn emit(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        fcat!(c.fn_impls_txt, "(").ok();
+        try!(self.lhs.emit(ctx, c));
+        fcat!(c.fn_impls_txt, " ", self.op.text(), " ").ok();
+        try!(self.rhs.emit(ctx, c));
+        fcat!(c.fn_impls_txt, ")").ok();
+
+        Ok(())
+    }
+}
+
+impl<'ctx> EmitC<'ctx> for syntax::Ident<'ctx> {
+    /// This implementation assumes the ident is being emitted as an identifier in an expression. It
+    /// will go to the function impls buffer.
+    fn emit(&'ctx self, _ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        fcat!(c.fn_impls_txt, self.text()).ok();
+        Ok(())
+    }
+}
+
+
+impl<'ctx> EmitC<'ctx> for syntax::Tuple<'ctx> {
+    fn depends(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        let c_t = {
+            let ty = ctx.ty_map.get(self).expect("Tuple not annotated with type.");
+            try!(c.typedef(ctx, ty))
+        };
+
+        for &elem in self.elems.iter() {
+            try!(elem.depends(ctx, c));
+        }
+
+        let tmp_id = c.temp_for("tpl", ctx, self);
+
+        let uniq = c.get_uniq();
+        c.scratch.clear();
+        strcat!(c.scratch, PREFIX, "tmp", uniq);
+
+        let tmp_id = ctx.strings.alloc(&c.scratch[..]);
+
+        fcatln!(c.fn_impls_txt, c.indent, c_t, " ", tmp_id, ";").ok();
+
+        for (idx, &elem) in self.elems.iter().enumerate() {
+            fcat!(c.fn_impls_txt, c.indent, tmp_id, "._", idx, " = ").ok();
+            try!(elem.emit(ctx, c));
+            fcatln!(c.fn_impls_txt, ";").ok();
+        }
+
+
+        c.tmp_map.insert(self, tmp_id);
+
+        Ok(())
+    }
+
+    fn emit(&'ctx self, _ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        let tmp_id = c.tmp_map.get(self).expect("Tuple not annotated with temporary.");
+
+        fcat!(c.fn_impls_txt, tmp_id).ok();
+
+        Ok(())
+    }
+}
+
+impl<'ctx> EmitC<'ctx> for syntax::FnCall<'ctx> {
+    fn depends(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        use syntax::Node;
+        use syntax::Tuple;
+
+        let ret_t = {
+            let ty = ctx.ty_map.get(self).expect("Fn Call not annotated with type.");
+            try!(c.typedef(ctx, ty))
+        };
+
+        let tmp_id = c.temp_for("ret", ctx, self);
+
+        try!(self.fun.depends(ctx, c));
+
+        match self.arg {
+            &Node::Tuple(Tuple { ref elems, .. }) => {
+                for &elem in elems.iter() {
+                    try!(elem.depends(ctx, c));
+                }
+            }
+            _ => try!(self.arg.depends(ctx, c)),
+        }
+
+        fcat!(c.fn_impls_txt, c.indent, ret_t, " ", tmp_id, " = ").ok();
+
+        try!(self.fun.emit(ctx, c));
+        fcat!(c.fn_impls_txt, "(").ok();
+        match self.arg {
+            &Node::Tuple(Tuple { ref elems, .. }) => {
+                for (idx, &elem) in elems.iter().enumerate() {
+                    fcat!(c.fn_impls_txt, if idx > 0 { ", " } else { "" }).ok();
+                    try!(elem.emit(ctx, c));
+                }
+            }
+            _ => match ctx.ty_map.get(self.arg).expect("Fn Argument not annotated with type.") {
+
+                &Type::Tuple { ref elems } => {
+                    for (idx, _) in elems.iter().enumerate() {
+                        fcat!(c.fn_impls_txt, if idx > 0 { ", " } else { "" }).ok();
+                        try!(self.arg.emit(ctx, c));
+                        fcat!(c.fn_impls_txt, "._", idx).ok();
+                    }
+                }
+
+                _ => { try!(self.arg.emit(ctx, c)); }
+            },
+        }
+
+        fcatln!(c.fn_impls_txt, ");\n").ok();
+
+        Ok(())
+    }
+
+    fn emit(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        let tmp = c.temp_for("<>", ctx, self);
+        fcat!(c.fn_impls_txt, tmp).ok();
+
+        Ok(())
+    }
+}
+
+impl<'ctx> EmitC<'ctx> for syntax::IfExpr<'ctx> {
+    fn depends(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        let if_t = {
+            let ty = ctx.ty_map.get(self).expect("If Expr not annotated with type.");
+            try!(c.typedef(ctx, ty))
+        };
+
+        let tmp_id = c.temp_for("ifres", ctx, self);
+        
+        fcatln!(c.fn_impls_txt, c.indent, if_t, " ", tmp_id, ";").ok();
+
+        try!(self.cond.depends(ctx, c));
+        fcat!(c.fn_impls_txt, c.indent, "if (").ok();
+        try!(self.cond.emit(ctx, c));
+        fcatln!(c.fn_impls_txt, ") {").ok();
+        c.inc_indent();
+
+        try!(self.yes.depends(ctx, c));
+        fcat!(c.fn_impls_txt, c.indent, tmp_id, " = ").ok();
+        try!(self.yes.emit(ctx, c));
+        fcatln!(c.fn_impls_txt, ";").ok();
+
+        c.dec_indent();
+
+        fcatln!(c.fn_impls_txt, c.indent, "} else {").ok();
+        c.inc_indent();
+
+        let no = self.no.expect("If Expr without matching else got to codegen.");
+
+        try!(no.depends(ctx, c));
+        fcat!(c.fn_impls_txt, c.indent, tmp_id, " = ").ok();
+        try!(no.emit(ctx, c));
+        fcatln!(c.fn_impls_txt, ";").ok();
+        
+        c.dec_indent();
+
+        fcatln!(c.fn_impls_txt, c.indent, "}\n").ok();
+
+        Ok(())
+    }
+
+    fn emit(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        let tmp = c.temp_for("<>", ctx, self);
+        fcat!(c.fn_impls_txt, tmp).ok();
+
+        Ok(())
+    }
+}
+
+impl<'ctx> EmitC<'ctx> for syntax::IntLit<'ctx> {
+    fn emit(&'ctx self, _ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        use source::TokenData;
+
+        match self.tok.data {
+            TokenData::Int(n) => { fcat!(c.fn_impls_txt, n).ok(); },
+            _ => return Err(error::Error::InternalError {
+                loc: Some(self.tok.loc),
+                msg: scat!("token is not an integer literal"),
+            }),
+        }
 
         Ok(())
     }
