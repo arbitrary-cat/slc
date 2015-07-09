@@ -317,13 +317,30 @@ impl<'ctx> syntax::FnDecl<'ctx> {
 
         fcat!(sig_loc.get_buffer(c), ret_t, " ", self.name.text(), "(").ok();
 
-        for &n in self.args.iter() {
-            let var_decl: &'ctx syntax::VarDecl<'ctx> = n.as_ref();
-            for &name in var_decl.names.iter() {
-                let c_id = name.text();
-                let c_ty = try!(c.typedef(ctx, var_decl.ty));
-                fcat!(sig_loc.get_buffer(c), comma, c_ty, " ", c_id).ok();
-                comma = Some(", ");
+        // Check for the special case where the function has a single tuple argument.
+        match self.args.first().cloned() {
+            Some(&Node::VarDecl(syntax::VarDecl {
+                ref names,
+                ty: &Type::Tuple {
+                    ref elems
+                },
+            })) if self.args.len() == 1 && names.len() == 1 => {
+                let c_id = names.first().unwrap().text();
+                for (idx, &elem_t) in elems.iter().enumerate() {
+                    let c_ty = try!(c.typedef(ctx, elem_t));
+                    fcat!(sig_loc.get_buffer(c), comma, c_ty, " ", c_id, "_", idx).ok();
+                    comma = Some(", ");
+                }
+            }
+
+            _ => for &n in self.args.iter() {
+                let var_decl: &'ctx syntax::VarDecl<'ctx> = n.as_ref();
+                for &name in var_decl.names.iter() {
+                    let c_id = name.text();
+                    let c_ty = try!(c.typedef(ctx, var_decl.ty));
+                    fcat!(sig_loc.get_buffer(c), comma, c_ty, " ", c_id).ok();
+                    comma = Some(", ");
+                }
             }
         }
 
@@ -343,6 +360,32 @@ impl<'ctx> EmitC<'ctx> for syntax::FnDecl<'ctx> {
         try!(self.print_sig(SigLoc::Impl, ctx, c));
         fcatln!(c.fn_impls_txt, " {").ok();
         c.inc_indent();
+
+        // Check for the special case where the function has a single tuple argument.
+        match self.args.first().cloned() {
+            Some(&Node::VarDecl(syntax::VarDecl {
+                ref names, ty
+            })) if self.args.len() == 1 && names.len() == 1 => {
+                let tuple_t = try!(c.typedef(ctx, ty));
+                let c_id = names.first().unwrap().text();
+
+                // Awkward second pattern match because we're not allowed to bind a name to `ty` and
+                // an internal field at the same time.
+                if let &Type::Tuple { ref elems } = ty {
+                    fcatln!(c.fn_impls_txt, c.indent, tuple_t, " ", c_id, ";").ok();
+
+                    for (idx, _) in elems.iter().enumerate() {
+                        fcatln!(
+                            c.fn_impls_txt, c.indent, c_id, "._", idx, " = ", c_id, "_", idx, ";"
+                        ).ok();
+                    }
+                }
+
+                fcatln!(c.fn_impls_txt, "").ok();
+            }
+            _ => (),
+        }
+
         try!(self.body.depends(ctx, c));
 
         fcat!(c.fn_impls_txt, c.indent, "return ").ok();
