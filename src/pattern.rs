@@ -15,6 +15,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+use codegen::CBuffer;
 use compiler::CtxRef;
 use error;
 use semantic::Scope;
@@ -26,6 +27,14 @@ pub trait Pattern<'ctx> {
     /// Declare in `scope` all identifiers introduced by a pattern to which an expression of type
     /// `ty` will be assigned.
     fn decl(&'ctx self, ty: &'ctx Type<'ctx>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    -> error::Result<'ctx, ()>
+    ;
+
+    /// Emit the C code to assign variables from this pattern. The text of an expression (which it
+    /// is safe to evaluate multiple times) for the value being assigned is stored in `c.field`.
+    ///
+    /// See the implementation for `syntax::TuplePattern` for a good example.
+    fn assign(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
     -> error::Result<'ctx, ()>
     ;
 }
@@ -46,13 +55,46 @@ impl<'ctx> Pattern<'ctx> for syntax::Node<'ctx> {
             }),
         }
     }
+    fn assign(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        use syntax::Node::*;
+
+        match self {
+            &Ident(ref ident)                => ident.assign(ctx, c),
+            &TuplePattern(ref tuple_pattern) => tuple_pattern.assign(ctx, c),
+
+            _ => Err(error::Error::InternalError {
+                loc: Some(self.loc()),
+                msg: scat!("Node type `", self, "' is not a pattern"),
+            }),
+        }
+    }
 }
 
 impl<'ctx> Pattern<'ctx> for syntax::Ident<'ctx> {
-    fn decl(&'ctx self, ty: &'ctx Type<'ctx>, _ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    fn decl(&'ctx self, ty: &'ctx Type<'ctx>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     {
+        // Annotate the identifier with its type.
+        ctx.ty_map.insert(self, ty);
+
         Ok(if self.text() != "_" { try!(scope.decl(self, ty)) })
+    }
+
+    fn assign(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        if self.text() == "_" { return Ok(()) }
+
+        let c_t = {
+            let ty = ctx.ty_map.get(self).expect("Ident pattern not annotated with type.");
+            try!(c.typedef(ctx, ty))
+        };
+
+        fcatln!(c.fn_impls_txt, c.indent, c_t, " ", self.text(), " = ", c.field, ";").ok();
+
+        Ok(())
     }
 }
 
@@ -80,5 +122,24 @@ impl<'ctx> Pattern<'ctx> for syntax::TuplePattern<'ctx> {
                 ty:       ty,
             })
         }
+    }
+
+    fn assign(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        let old_len = c.field.len();
+
+        for (idx, &elem) in self.elems.iter().enumerate() {
+            // Push a selector onto the field string.
+            strcat!(c.field, "._", idx);
+
+            // Recurse into the next pattern.
+            try!(elem.assign(ctx, c));
+
+            // Pop the selector off.
+            c.field.truncate(old_len);
+        }
+
+        Ok(())
     }
 }

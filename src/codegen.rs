@@ -19,46 +19,46 @@ use std::io;
 
 use compiler::CtxRef;
 use error;
+use pattern::Pattern;
 use syntax::{self, Node, GenNode};
 use types::Type;
 use util;
 
-const PREFIX: &'static str = "SL";
+const PREFIX: &'static str = "SL_";
 
-type TempMap<'ctx> = util::TagMap<'ctx, &'ctx str>;
+pub type TempMap<'ctx> = util::TagMap<'ctx, &'ctx str>;
 
-type TypedefMap<'ctx> = util::TagMap<'ctx, &'ctx str>;
+pub type TypedefMap<'ctx> = util::TagMap<'ctx, &'ctx str>;
 
 /// A buffer which can be used to build a C file.
-///
-/// # Notes
-///
-/// Right now the design here is a bit sketchy, the type is `pub`, but none of the fields are (so
-/// you can't really build a C file outside the `codegen` module right now). We can try to fix this
-/// later when it becomes clear *how* and *why* we'd want to do that.
 pub struct CBuffer<'ctx> {
     next_uniq: usize,
 
-    // A string to use as scratch space for constructing identifiers (which can then be stored using
-    // the StrArena).
-    scratch: String,
+    /// A string to use as scratch space for constructing identifiers (which can then be stored using
+    /// the StrArena).
+    pub scratch: String,
 
-    // A mapping from expression nodes to temporary variable names (used to store sub-expressions).
-    tmp_map: TempMap<'ctx>,
+    /// This string is similar to scratch, but it's used for building the RHS of assignments in the
+    /// Pattern::assign method. See the `pattern::Pattern::assign` implementation for
+    /// `syntax::TuplePattern` for an example of its use.
+    pub field: String,
 
-    // A mapping from SL types to their C typedef names.
-    typedef_map: TypedefMap<'ctx>,
+    /// A mapping from expression nodes to temporary variable names (used to store sub-expressions).
+    pub tmp_map: TempMap<'ctx>,
 
-    // Text for all C typedef code.
-    typedefs_txt: Vec<u8>,
+    /// A mapping from SL types to their C typedef names.
+    pub typedef_map: TypedefMap<'ctx>,
 
-    // Text for C function prototypes.
-    fn_protos_txt: Vec<u8>,
+    /// Text for all C typedef code.
+    pub typedefs_txt: Vec<u8>,
 
-    // Text for C function implementations (the actual code!).
-    fn_impls_txt: Vec<u8>,
+    /// Text for C function prototypes.
+    pub fn_protos_txt: Vec<u8>,
 
-    indent: String,
+    /// Text for C function implementations (the actual code!).
+    pub fn_impls_txt: Vec<u8>,
+
+    pub indent: String,
 }
 
 impl<'ctx> CBuffer<'ctx> {
@@ -68,6 +68,7 @@ impl<'ctx> CBuffer<'ctx> {
         CBuffer {
             next_uniq:     0,
             scratch:       String::new(),
+            field:         String::new(),
             tmp_map:       TempMap::new(),
             typedef_map:   TypedefMap::new(),
             typedefs_txt:  Vec::new(),
@@ -146,7 +147,7 @@ impl<'ctx> CBuffer<'ctx> {
         } else {
             self.scratch.clear();
             let uniq = self.get_uniq();
-            strcat!(self.scratch, PREFIX, hint, uniq);
+            strcat!(self.scratch, PREFIX, hint, "_", uniq);
             let name = ctx.strings.alloc(&self.scratch[..]);
             self.tmp_map.insert(expr, name);
 
@@ -235,6 +236,7 @@ impl<'ctx> EmitC<'ctx> for syntax::Node<'ctx> {
             &FnCall(ref fn_call)                   => fn_call.depends(ctx, c),
             &IfExpr(ref if_expr)                   => if_expr.depends(ctx, c),
             &IntLit(ref int_lit)                   => int_lit.depends(ctx, c),
+            &LetExpr(ref let_expr)                 => let_expr.depends(ctx, c),
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
                 msg: scat!("Node type `", self, "' cannot be emitted as C."),
@@ -264,6 +266,7 @@ impl<'ctx> EmitC<'ctx> for syntax::Node<'ctx> {
             &FnCall(ref fn_call)                   => fn_call.emit(ctx, c),
             &IfExpr(ref if_expr)                   => if_expr.emit(ctx, c),
             &IntLit(ref int_lit)                   => int_lit.emit(ctx, c),
+            &LetExpr(ref let_expr)                 => let_expr.emit(ctx, c),
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
                 msg: scat!("Node type `", self, "' cannot be emitted as C."),
@@ -401,12 +404,6 @@ impl<'ctx> EmitC<'ctx> for syntax::Tuple<'ctx> {
         }
 
         let tmp_id = c.temp_for("tpl", ctx, self);
-
-        let uniq = c.get_uniq();
-        c.scratch.clear();
-        strcat!(c.scratch, PREFIX, "tmp", uniq);
-
-        let tmp_id = ctx.strings.alloc(&c.scratch[..]);
 
         fcatln!(c.fn_impls_txt, c.indent, c_t, " ", tmp_id, ";").ok();
 
@@ -564,6 +561,67 @@ impl<'ctx> EmitC<'ctx> for syntax::IntLit<'ctx> {
                 msg: scat!("token is not an integer literal"),
             }),
         }
+
+        Ok(())
+    }
+}
+
+impl<'ctx> EmitC<'ctx> for syntax::LetExpr<'ctx> {
+    fn depends(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+
+        try!(self.val.depends(ctx, c));
+
+        // Declare the temporary that will hold the value of the let expression.
+
+        let tmp = c.temp_for("let", ctx, self);
+
+        let body_t = {
+            let ty = ctx.ty_map.get(self.body).expect("Let body not annotated with type.");
+            try!(c.typedef(ctx, ty))
+        };
+
+        // Note that we're entering a new C scope here.
+        fcatln!(c.fn_impls_txt, c.indent, body_t, " ", tmp, "; {").ok();
+
+        c.inc_indent();
+
+        // Declare the temporary that will hold it's 
+
+        let field = c.temp_for("pat", ctx, self.pat);
+
+        let val_t = {
+            let ty = ctx.ty_map.get(self.val).expect("Let RHS not annotated with type.");
+            try!(c.typedef(ctx, ty))
+        };
+
+        fcat!(c.fn_impls_txt, c.indent, val_t, " ", field, " = ").ok();
+        try!(self.val.emit(ctx, c));
+        fcatln!(c.fn_impls_txt, ";").ok();
+
+        c.field.clear();
+        c.field.push_str(field);
+
+        try!(self.pat.assign(ctx, c));
+
+        try!(self.body.depends(ctx, c));
+
+        fcat!(c.fn_impls_txt, c.indent, tmp, " = ").ok();
+        try!(self.body.emit(ctx, c));
+        fcatln!(c.fn_impls_txt, ";").ok();
+
+        c.dec_indent();
+        fcatln!(c.fn_impls_txt, c.indent, "}").ok();
+
+        Ok(())
+    }
+
+    fn emit(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        let tmp = c.temp_for("<>", ctx, self);
+        fcat!(c.fn_impls_txt, tmp).ok();
 
         Ok(())
     }

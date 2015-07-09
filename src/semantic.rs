@@ -22,6 +22,7 @@ use std::rc::Rc;
 use compiler::CtxRef;
 use error::{self, Error};
 use expr::Expr;
+use pattern::Pattern;
 use syntax::{self, Ident, GenNode};
 use types::Type;
 use util;
@@ -126,6 +127,7 @@ impl<'ctx> Check<'ctx> for syntax::Node<'ctx> {
             &FnCall(ref fn_call)                   => fn_call.check(ctx, scope),
             &IfExpr(ref if_expr)                   => if_expr.check(ctx, scope),
             &IntLit(ref int_lit)                   => int_lit.check(ctx, scope),
+            &LetExpr(ref let_expr)                 => let_expr.check(ctx, scope),
 
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
@@ -307,10 +309,28 @@ impl<'ctx> Check<'ctx> for syntax::IfExpr<'ctx> {
     }
 }
 
-impl <'ctx> Check<'ctx> for syntax::IntLit<'ctx> {
+impl<'ctx> Check<'ctx> for syntax::IntLit<'ctx> {
     fn check(&'ctx self, _ctx: CtxRef<'ctx>, _scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     {
         Ok(())
+    }
+}
+
+impl<'ctx> Check<'ctx> for syntax::LetExpr<'ctx> {
+    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        try!(self.val.check(ctx, scope));
+
+        let val_t = try!(self.val.type_in(ctx, scope));
+
+        let mut inner_scope = scope.child();
+
+        try!(self.pat.decl(val_t, ctx, &mut inner_scope));
+
+        ctx.scopes.insert(self.body, inner_scope.clone());
+
+        self.body.check(ctx, &mut inner_scope)
     }
 }
