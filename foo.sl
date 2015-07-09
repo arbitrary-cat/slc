@@ -54,8 +54,7 @@ fn snd(t: (int, int, int))
     let (_, x, _) = t in x
 }
 
-// This type-checks but generates invalid C code (we're choosing the tuple calling convention based
-// on syntax and making a distinction between f(x, y, z: int) and f(t: (int, int, int)).
+// This function now generates the correct C code!
 fn dbl_snd(x, y, z: int)
 : int
 {
