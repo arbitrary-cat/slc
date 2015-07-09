@@ -41,3 +41,14 @@ fn fib(n: int)
         1
     }
 }
+
+fn sqr2(x: int)
+: int {
+    (let xx = x*x in xx + xx) + 2
+}
+
+fn snd(t: (int, int, int))
+: int {
+    // `let` expressions can be used to destructure tuples.
+    let (_, x, _) = t in x
+}
