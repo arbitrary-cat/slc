@@ -48,7 +48,16 @@ fn sqr2(x: int)
 }
 
 fn snd(t: (int, int, int))
-: int {
+: int
+{
     // `let` expressions can be used to destructure tuples.
     let (_, x, _) = t in x
+}
+
+// This type-checks but generates invalid C code (we're choosing the tuple calling convention based
+// on syntax and making a distinction between f(x, y, z: int) and f(t: (int, int, int)).
+fn dbl_snd(x, y, z: int)
+: int
+{
+    dbl (snd (x, y, z))
 }
