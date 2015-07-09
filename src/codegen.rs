@@ -39,8 +39,8 @@ pub struct CBuffer<'ctx> {
     pub scratch: String,
 
     /// This string is similar to scratch, but it's used for building the RHS of assignments in the
-    /// Pattern::assign method. See the `pattern::Pattern::assign` implementation for
-    /// `syntax::TuplePattern` for an example of its use.
+    /// Pattern::assign method. See the implementation for `syntax::TuplePattern` in pattern.rs for
+    /// an example of its use.
     pub field: String,
 
     /// A mapping from expression nodes to temporary variable names (used to store sub-expressions).
