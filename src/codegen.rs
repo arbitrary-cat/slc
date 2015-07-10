@@ -379,12 +379,15 @@ impl<'ctx> EmitC<'ctx> for syntax::FnDecl<'ctx> {
                             c.fn_impls_txt, c.indent, c_id, "._", idx, " = ", c_id, "_", idx, ";"
                         ).ok();
                     }
-                }
 
-                fcatln!(c.fn_impls_txt, "").ok();
+                }
             }
             _ => (),
         }
+
+        // Add a newline at the top of the function (possibly after some tuple shenanigans) for
+        // readability.
+        fcatln!(c.fn_impls_txt, "").ok();
 
         try!(self.body.depends(ctx, c));
 
@@ -549,10 +552,9 @@ impl<'ctx> EmitC<'ctx> for syntax::IfExpr<'ctx> {
 
         let tmp_id = c.temp_for("ifres", ctx, self);
         
-        fcatln!(c.fn_impls_txt, c.indent, if_t, " ", tmp_id, ";").ok();
-
         try!(self.cond.depends(ctx, c));
-        fcat!(c.fn_impls_txt, c.indent, "if (").ok();
+
+        fcat!(c.fn_impls_txt, c.indent, if_t, " ", tmp_id, "; if (").ok();
         try!(self.cond.emit(ctx, c));
         fcatln!(c.fn_impls_txt, ") {").ok();
         c.inc_indent();
@@ -655,7 +657,7 @@ impl<'ctx> EmitC<'ctx> for syntax::LetExpr<'ctx> {
         fcatln!(c.fn_impls_txt, ";").ok();
 
         c.dec_indent();
-        fcatln!(c.fn_impls_txt, c.indent, "}").ok();
+        fcatln!(c.fn_impls_txt, c.indent, "}\n").ok();
 
         Ok(())
     }
