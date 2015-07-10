@@ -559,6 +559,44 @@ impl<'ctx> GenNode<'ctx> for TuplePattern<'ctx> {
 }
 
 
+/// A series of expressions to be evaluated in order, whose value is that of the last expression in
+/// the block.
+pub struct Block<'ctx> {
+    pub open_curly: source::Loc<'ctx>,
+
+    pub exprs:  Vec<&'ctx Node<'ctx>>,
+}
+
+impl<'ctx> util::Tagged<'ctx> for Block<'ctx> {}
+
+impl<'ctx> AsRef<Block<'ctx>> for Node<'ctx> {
+    fn as_ref(&self) -> &Block<'ctx> {
+        match self {
+            &Node::Block(ref block) => block,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'ctx> Into<Node<'ctx>> for Block<'ctx> {
+    fn into(self) -> Node<'ctx> { Node::Block(self) }
+}
+
+impl<'ctx> GenNode<'ctx> for Block<'ctx> {
+    fn loc(&self)
+    -> source::Loc<'ctx>
+    {
+        self.open_curly
+    }
+
+    fn text(&self)
+    -> &'ctx str
+    {
+        "<block>"
+    }
+}
+
+
 pub struct Context<'ctx> {
     mem: TypedArena<Node<'ctx>>,
 }
@@ -1112,6 +1150,7 @@ pub enum Node<'ctx> {
     LetExpr(LetExpr<'ctx>),
     Tuple(Tuple<'ctx>),
     TuplePattern(TuplePattern<'ctx>),
+    Block(Block<'ctx>),
 }
 
 /// A trait which must be provided by every kind of `Node`.
@@ -1140,6 +1179,7 @@ impl<'ctx> GenNode<'ctx> for Node<'ctx> {
             &LetExpr(ref n)         => n.loc(),
             &Tuple(ref n)           => n.loc(),
             &TuplePattern(ref n)    => n.loc(),
+            &Block(ref n)           => n.loc(),
         }
     }
 
@@ -1162,6 +1202,7 @@ impl<'ctx> GenNode<'ctx> for Node<'ctx> {
             &LetExpr(ref n)         => n.text(),
             &Tuple(ref n)           => n.text(),
             &TuplePattern(ref n)    => n.text(),
+            &Block(ref n)           => n.text(),
         }
     }
 }
@@ -1188,6 +1229,7 @@ impl<'ctx> cats::Show for Node<'ctx> {
             &LetExpr(..)         => cat_len!("LetExpr"),
             &Tuple(..)           => cat_len!("Tuple"),
             &TuplePattern(..)    => cat_len!("TuplePattern"),
+            &Block(..)           => cat_len!("Block"),
         }
     }
 
@@ -1210,6 +1252,7 @@ impl<'ctx> cats::Show for Node<'ctx> {
             &LetExpr(..)         => cat_write!(w, "LetExpr"),
             &Tuple(..)           => cat_write!(w, "Tuple"),
             &TuplePattern(..)    => cat_write!(w, "TuplePattern"),
+            &Block(..)           => cat_write!(w, "Block"),
         }
     }
 }
@@ -1234,6 +1277,7 @@ impl<'ctx> util::Tagged<'ctx> for Node<'ctx> {
             &LetExpr(ref n)         => n.tag(),
             &Tuple(ref n)           => n.tag(),
             &TuplePattern(ref n)    => n.tag(),
+            &Block(ref n)           => n.tag(),
         }
     }
 }
