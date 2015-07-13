@@ -58,13 +58,6 @@ fn snd(t: (int, int, int))
 fn dbl_snd(x, y, z: int)
 : int
 {
-    dbl (snd (x, y, z))
-}
-
-fn notta(x: int) {
-}
-
-fn worthless(x: int) {
-    notta x;
-    dbl_snd (x, x, x);
+    let res = snd (x, y, z);
+    dbl res
 }

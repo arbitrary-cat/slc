@@ -326,13 +326,20 @@ impl<'ctx> Check<'ctx> for syntax::LetExpr<'ctx> {
 
         let val_t = try!(self.val.type_in(ctx, scope));
 
-        let mut inner_scope = scope.child();
 
-        try!(self.pat.decl(val_t, ctx, &mut inner_scope));
+        if let Some(body) = self.body {
+            let mut inner_scope = scope.child();
 
-        ctx.scopes.insert(self.body, inner_scope.clone());
+            try!(self.pat.decl(val_t, ctx, &mut inner_scope));
 
-        self.body.check(ctx, &mut inner_scope)
+            ctx.scopes.insert(body, inner_scope.clone());
+
+            try!(body.check(ctx, &mut inner_scope));
+        } else {
+            try!(self.pat.decl(val_t, ctx, scope));
+        }
+
+        Ok(())
     }
 }
 

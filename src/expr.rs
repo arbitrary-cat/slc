@@ -194,15 +194,19 @@ impl<'ctx> Expr<'ctx> for syntax::LetExpr<'ctx> {
     fn type_in(&'ctx self, ctx: CtxRef<'ctx>, _scope: &Scope<'ctx>)
     -> error::Result<'ctx, &'ctx Type<'ctx>>
     {
-        let expr_scope = match ctx.scopes.get(self.body) {
-            Some(expr_scope) => expr_scope,
-            None => return Err(error::Error::InternalError {
-                loc: Some(self.loc()),
-                msg: scat!("let-expr's body not annotated with scope"),
-            }),
-        };
+        if let Some(body) = self.body {
+            let expr_scope = match ctx.scopes.get(body) {
+                Some(expr_scope) => expr_scope,
+                None => return Err(error::Error::InternalError {
+                    loc: Some(self.loc()),
+                    msg: scat!("let-expr's body not annotated with scope"),
+                }),
+            };
 
-        self.body.type_in(ctx, &expr_scope)
+            body.type_in(ctx, &expr_scope)
+        } else {
+            Ok(ctx.types.unit())
+        }
     }
 }
 

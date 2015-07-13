@@ -487,8 +487,9 @@ pub struct LetExpr<'ctx> {
     /// The value being destructured into the pattern.
     pub val: &'ctx Node<'ctx>,
 
-    /// The expression to be evaluated with this binding.
-    pub body: &'ctx Node<'ctx>,
+    /// The expression to be evaluated with this binding. If this field is `None` then the bindings
+    /// are declared in the containing scope.
+    pub body: Option<&'ctx Node<'ctx>>,
 }
 
 impl<'ctx> util::Tagged<'ctx> for LetExpr<'ctx> {}
@@ -1048,8 +1049,12 @@ impl<'ctx> Parser<'ctx> {
         let pat = try!(self.parse_pattern());
         p_match!(self, "`='", Sym("="));
         let val = try!(self.parse_expr());
-        p_match!(self, "`in'", Kw("in"));
-        let body = try!(self.parse_expr());
+        let body = p_peek!(tok in self {
+            Sym(";") => None
+        } else {
+            p_match!(self, "`in' or ';'", Kw("in"));
+            Some(try!(self.parse_expr()))
+        });
 
         Ok(self.mk_node(LetExpr {
             let_loc: loc,

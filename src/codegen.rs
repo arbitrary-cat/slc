@@ -1,5 +1,5 @@
 // Copyright (c) 2016, Sam Payson
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
 // including without limitation the rights to use, copy, modify, merge, publish, distribute,
@@ -466,8 +466,7 @@ impl<'ctx> EmitC<'ctx> for syntax::Tuple<'ctx> {
             fcatln!(c.fn_impls_txt, ";").ok();
         }
 
-
-        c.tmp_map.insert(self, tmp_id);
+        fcat!(c.fn_impls_txt, "\n").ok();
 
         Ok(())
     }
@@ -625,22 +624,26 @@ impl<'ctx> EmitC<'ctx> for syntax::LetExpr<'ctx> {
 
         try!(self.val.depends(ctx, c));
 
-        // Declare the temporary that will hold the value of the let expression.
+        let tmp = if let Some(body) = self.body {
+            // Declare the temporary that will hold the value of the let expression.
+            let tmp = c.temp_for("let", ctx, self);
+            let body_t = {
+                let ty = ctx.ty_map.get(body).expect("Let body not annotated with type.");
+                try!(c.typedef(ctx, ty))
+            };
 
-        let tmp = c.temp_for("let", ctx, self);
+            // Note that we're entering a new C scope here.
+            fcatln!(c.fn_impls_txt, c.indent, body_t, " ", tmp, "; {").ok();
 
-        let body_t = {
-            let ty = ctx.ty_map.get(self.body).expect("Let body not annotated with type.");
-            try!(c.typedef(ctx, ty))
+            c.inc_indent();
+
+            tmp
+        } else {
+            // Invalid C identifier
+            "<?>"
         };
 
-        // Note that we're entering a new C scope here.
-        fcatln!(c.fn_impls_txt, c.indent, body_t, " ", tmp, "; {").ok();
-
-        c.inc_indent();
-
-        // Declare the temporary that will hold it's 
-
+        // Declare the temporary that will hold the value being destructured by the pattern.
         let field = c.temp_for("pat", ctx, self.pat);
 
         let val_t = {
@@ -657,14 +660,18 @@ impl<'ctx> EmitC<'ctx> for syntax::LetExpr<'ctx> {
 
         try!(self.pat.assign(ctx, c));
 
-        try!(self.body.depends(ctx, c));
+        if let Some(body) = self.body {
+            try!(body.depends(ctx, c));
 
-        fcat!(c.fn_impls_txt, c.indent, tmp, " = ").ok();
-        try!(self.body.emit(ctx, c));
-        fcatln!(c.fn_impls_txt, ";").ok();
+            fcat!(c.fn_impls_txt, c.indent, tmp, " = ").ok();
+            try!(body.emit(ctx, c));
+            fcatln!(c.fn_impls_txt, ";").ok();
 
-        c.dec_indent();
-        fcatln!(c.fn_impls_txt, c.indent, "}\n").ok();
+            c.dec_indent();
+            fcatln!(c.fn_impls_txt, c.indent, "}").ok();
+        }
+
+        fcat!(c.fn_impls_txt, "\n").ok();
 
         Ok(())
     }
@@ -701,6 +708,7 @@ impl<'ctx> EmitC<'ctx> for syntax::Block<'ctx> {
 
         if self.unit {
             let unit_t = try!(c.typedef(ctx, ctx.types.unit()));
+            // Pretty sure this puts the generated code firmly in the GNU C camp.
             fcatln!(c.fn_impls_txt, c.indent, tmp, " = (", unit_t, ") {0};").ok();
         } else {
             fcat!(c.fn_impls_txt, c.indent, tmp, " = ").ok();
