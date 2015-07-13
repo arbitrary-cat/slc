@@ -344,6 +344,7 @@ impl<'ctx> Check<'ctx> for syntax::Block<'ctx> {
 
         for &expr in self.exprs.iter() {
             try!(expr.check(ctx, inner_scope));
+            try!(expr.type_in(ctx, inner_scope));
         }
 
         Ok(())

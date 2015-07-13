@@ -221,7 +221,7 @@ impl<'src> Scanner<'src> {
 
             '(' | ')' | '{' | '}' | '+' | '-' | '*' |
             '/' | '%' | ',' | ':' | '>' | '<' | '=' |
-            '!' | '|' | '&' => {
+            '!' | '|' | '&' | ';' => {
                 self.scan_operator(loc, beg, start)
             }
             _                                 => unreachable!(),
