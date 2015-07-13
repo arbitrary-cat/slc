@@ -701,7 +701,7 @@ impl<'ctx> EmitC<'ctx> for syntax::Block<'ctx> {
 
         if self.unit {
             let unit_t = try!(c.typedef(ctx, ctx.types.unit()));
-            fcatln!(c.fn_impls_txt, c.indent, tmp, " = ((", unit_t, ") {0});").ok();
+            fcatln!(c.fn_impls_txt, c.indent, tmp, " = (", unit_t, ") {0};").ok();
         } else {
             fcat!(c.fn_impls_txt, c.indent, tmp, " = ").ok();
             try!(self.exprs.last().cloned().unwrap().emit(ctx, c));

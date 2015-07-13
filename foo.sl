@@ -60,3 +60,11 @@ fn dbl_snd(x, y, z: int)
 {
     dbl (snd (x, y, z))
 }
+
+fn notta(x: int) {
+}
+
+fn worthless(x: int) {
+    notta x;
+    dbl_snd (x, x, x);
+}
