@@ -721,7 +721,7 @@ impl<'ctx> Parser<'ctx> {
         }))
     }
 
-    // FnDecl = 'fn' Ident '(' ArgList ')' ':' Type '{' Expr '}'
+    // FnDecl = 'fn' Ident '(' ArgList ')' [ ':' Type ] Block
     fn parse_fn_decl(&mut self)
     -> error::Result<'ctx, &'ctx Node<'ctx>>
     {
@@ -737,12 +737,14 @@ impl<'ctx> Parser<'ctx> {
             if args.len() > 0 { "`,' or `)'" } else { "identifier or `)'" },
             Sym(")"));
 
-        p_match!(self, "':'", Sym(":"));
-        let to = try!(self.parse_type());
+        let to = if p_delim!(self, Sym(":")) {
+            try!(self.parse_type())
+        } else {
+            self.ctx.types.unit()
+        };
 
-        p_match!(self, "'{'", Sym("{"));
-        let body = try!(self.parse_expr());
-        p_match!(self, "'}'", Sym("}"));
+        let curly = p_match!(self, "`{'", Sym("{"));
+        let body  = try!(self.parse_block(curly.loc));
 
         let fn_decl = self.mk_node(FnDecl {
             name: name,
@@ -1088,7 +1090,7 @@ impl<'ctx> Parser<'ctx> {
 
     // This function expects that a `Kw("if")` token has just been consumed.
     //
-    // IfExpr = 'if' Expr '{' Expr '}' ElseExpr .
+    // IfExpr = 'if' Expr '{' Expr '}' [ ElseExpr ] .
     //
     // ElseExpr = 'else' IfExpr
     //          | 'else' '{' Expr '}'
@@ -1097,17 +1099,14 @@ impl<'ctx> Parser<'ctx> {
     -> error::Result<'ctx, &'ctx Node<'ctx>>
     {
         let cond = try!(self.parse_expr());
-        p_match!(self, "`{'", Sym("{"));
-        let yes = try!(self.parse_expr());
-        p_match!(self, "`}'", Sym("}"));
+
+        let curly = p_match!(self, "`{'", Sym("{"));
+        let yes   = try!(self.parse_block(curly.loc));
+
         let no  = if p_delim!(self, Kw("else")) {
             Some(p_try!(tok in self {
                 Kw("if") => try!(self.parse_if_expr(tok.loc)),
-                Sym("{") => {
-                    let no = try!(self.parse_expr());
-                    p_match!(self, "`}'", Sym("}"));
-                    no
-                }
+                Sym("{") => try!(self.parse_block(tok.loc))
             } else {
                 return expecting("`if' or `{'", tok);
             }))
