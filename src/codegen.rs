@@ -1,4 +1,4 @@
-// Copyright (c) 2015, Sam Payson
+// Copyright (c) 2016, Sam Payson
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -121,6 +121,7 @@ impl<'ctx> CBuffer<'ctx> {
 
         match ty {
             &Type::Int  => strcat!(self.scratch, PREFIX, "int_t"),
+            &Type::Unit => strcat!(self.scratch, PREFIX, "unit_t"),
             &Type::Bool => strcat!(self.scratch, PREFIX, "bool_t"),
             &Type::Func { .. }  => strcat!(self.scratch, PREFIX, "fn", uniq, "_t"),
             &Type::Tuple { .. } => strcat!(self.scratch, PREFIX, "tuple", uniq, "_t"),
@@ -196,6 +197,10 @@ impl<'ctx> Type<'ctx> {
             &Type::Int | &Type::Bool => {
                 fcatln!(c.typedefs_txt, "typedef int ", td, ";\n").ok();
             }
+
+            &Type::Unit => {
+                fcatln!(c.typedefs_txt, "typedef struct ", td, " { char _; } ", td, ";\n").ok();
+            }
         }
 
         Ok(())
@@ -237,6 +242,7 @@ impl<'ctx> EmitC<'ctx> for syntax::Node<'ctx> {
             &IfExpr(ref if_expr)                   => if_expr.depends(ctx, c),
             &IntLit(ref int_lit)                   => int_lit.depends(ctx, c),
             &LetExpr(ref let_expr)                 => let_expr.depends(ctx, c),
+            &Block(ref block)                      => block.depends(ctx, c),
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
                 msg: scat!("Node type `", self, "' cannot be emitted as C."),
@@ -267,6 +273,7 @@ impl<'ctx> EmitC<'ctx> for syntax::Node<'ctx> {
             &IfExpr(ref if_expr)                   => if_expr.emit(ctx, c),
             &IntLit(ref int_lit)                   => int_lit.emit(ctx, c),
             &LetExpr(ref let_expr)                 => let_expr.emit(ctx, c),
+            &Block(ref block)                      => block.emit(ctx, c),
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
                 msg: scat!("Node type `", self, "' cannot be emitted as C."),
@@ -655,6 +662,51 @@ impl<'ctx> EmitC<'ctx> for syntax::LetExpr<'ctx> {
         fcat!(c.fn_impls_txt, c.indent, tmp, " = ").ok();
         try!(self.body.emit(ctx, c));
         fcatln!(c.fn_impls_txt, ";").ok();
+
+        c.dec_indent();
+        fcatln!(c.fn_impls_txt, c.indent, "}\n").ok();
+
+        Ok(())
+    }
+
+    fn emit(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        let tmp = c.temp_for("<>", ctx, self);
+        fcat!(c.fn_impls_txt, tmp).ok();
+
+        Ok(())
+    }
+}
+
+impl<'ctx> EmitC<'ctx> for syntax::Block<'ctx> {
+    fn depends(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        // Declare the temporary that will hold the value of the block.
+
+        let tmp = c.temp_for("block", ctx, self);
+
+        let blk_t = {
+            let ty = ctx.ty_map.get(self).expect("Block not annotated with type.");
+            try!(c.typedef(ctx, ty))
+        };
+
+        fcatln!(c.fn_impls_txt, c.indent, blk_t, " ", tmp, "; {\n").ok();
+
+        c.inc_indent();
+        for &expr in self.exprs.iter() {
+            try!(expr.depends(ctx, c));
+        }
+
+        if self.unit {
+            let unit_t = try!(c.typedef(ctx, ctx.types.unit()));
+            fcatln!(c.fn_impls_txt, c.indent, tmp, " = ((", unit_t, ") {0});").ok();
+        } else {
+            fcat!(c.fn_impls_txt, c.indent, tmp, " = ").ok();
+            try!(self.exprs.last().cloned().unwrap().emit(ctx, c));
+            fcatln!(c.fn_impls_txt, ";").ok();
+        }
 
         c.dec_indent();
         fcatln!(c.fn_impls_txt, c.indent, "}\n").ok();

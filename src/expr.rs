@@ -51,6 +51,7 @@ impl<'ctx> Expr<'ctx> for Node<'ctx> {
                 &IfExpr(ref if_expr)   => try!(if_expr.type_in(ctx, scope)),
                 &LetExpr(ref let_expr) => try!(let_expr.type_in(ctx, scope)),
                 &Tuple(ref tuple)      => try!(tuple.type_in(ctx, scope)),
+                &Block(ref block)      => try!(block.type_in(ctx, scope)),
 
                 _ => return Err(error::Error::InternalError {
                     loc: Some(self.loc()),
@@ -217,5 +218,17 @@ impl<'ctx> Expr<'ctx> for syntax::Tuple<'ctx> {
         }
 
         Ok(ctx.types.mk_type(Type::Tuple { elems: elems_t }))
+    }
+}
+
+impl<'ctx> Expr<'ctx> for syntax::Block<'ctx> {
+    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, scope: &Scope<'ctx>)
+    -> error::Result<'ctx, &'ctx Type<'ctx>>
+    {
+        Ok(if self.unit {
+            ctx.types.unit()
+        } else {
+            try!(self.exprs.last().unwrap().type_in(ctx, scope))
+        })
     }
 }

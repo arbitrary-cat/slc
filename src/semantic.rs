@@ -128,6 +128,7 @@ impl<'ctx> Check<'ctx> for syntax::Node<'ctx> {
             &IfExpr(ref if_expr)                   => if_expr.check(ctx, scope),
             &IntLit(ref int_lit)                   => int_lit.check(ctx, scope),
             &LetExpr(ref let_expr)                 => let_expr.check(ctx, scope),
+            &Block(ref block)                      => block.check(ctx, scope),
 
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
@@ -332,5 +333,19 @@ impl<'ctx> Check<'ctx> for syntax::LetExpr<'ctx> {
         ctx.scopes.insert(self.body, inner_scope.clone());
 
         self.body.check(ctx, &mut inner_scope)
+    }
+}
+
+impl<'ctx> Check<'ctx> for syntax::Block<'ctx> {
+    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        let mut inner_scope = &mut scope.child();
+
+        for &expr in self.exprs.iter() {
+            try!(expr.check(ctx, inner_scope));
+        }
+
+        Ok(())
     }
 }

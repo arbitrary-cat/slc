@@ -24,8 +24,9 @@ use util;
 use arena::TypedArena;
 use cats;
 
-#[derive(PartialEq,Eq,Hash)]
+#[derive(PartialEq,Eq,Hash,Clone)]
 pub enum Type<'ctx> {
+    Unit,
     Int,
     Bool,
     Func {
@@ -54,24 +55,25 @@ impl<'ctx> Context<'ctx> {
 
     /// Return a reference to the unit type `()`.
     pub fn unit(&'ctx self) -> &'ctx Type<'ctx> {
-        self.mk_type(Type::Tuple { elems: Vec::new() })
+        self.mk_type(Type::Unit)
     }
 
     /// Create a new type in the given context. This function will convert 1-element tuple types
     /// into scalars (since the language does not distinguish, but it's easier to encapsulate the
     /// special-case code here rather everywhere that might produce a 1-element tuple).
     pub fn mk_type(&'ctx self, mut t: Type<'ctx>) -> &'ctx Type<'ctx> {
-        match t {
-            Type::Tuple { ref mut elems } if (elems.len() == 1) => return elems.pop().unwrap(),
-            _ => (),
-        }
+        let actual = match t {
+            Type::Tuple { ref mut elems } if (elems.len() == 1) => elems.pop().unwrap().clone(),
+            Type::Tuple { ref mut elems } if (elems.is_empty()) => Type::Unit,
+            _ => t,
+        };
 
-        let x = self.dedup.borrow().get(&t).cloned();
+        let x = self.dedup.borrow().get(&actual).cloned();
 
         match x {
             Some(ty) => ty,
             None     => {
-                let ty = self.mem.alloc(t);
+                let ty = self.mem.alloc(actual);
                 self.dedup.borrow_mut().insert(ty, ty);
                 ty
             }
@@ -83,6 +85,7 @@ impl<'ctx> cats::Show for Type<'ctx> {
     fn len(&self) -> usize {
         match self {
             &Type::Int                 => cat_len!("int"),
+            &Type::Unit                => cat_len!("()"),
             &Type::Bool                => cat_len!("bool"),
             &Type::Func { from, to }   => cat_len!("func ", from, " -> ", to),
             &Type::Tuple { ref elems } => {
@@ -98,6 +101,7 @@ impl<'ctx> cats::Show for Type<'ctx> {
     fn write<W: io::Write>(&self, w: &mut W) -> io::Result<usize> {
         match self {
             &Type::Int                 => cat_write!(w, "int"),
+            &Type::Unit                => cat_write!(w, "()"),
             &Type::Bool                => cat_write!(w, "bool"),
             &Type::Func { from, to }   => cat_write!(w, "func ", from, " -> ", to),
             &Type::Tuple { ref elems } => {
