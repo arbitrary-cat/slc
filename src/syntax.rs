@@ -564,7 +564,11 @@ impl<'ctx> GenNode<'ctx> for TuplePattern<'ctx> {
 pub struct Block<'ctx> {
     pub open_curly: source::Loc<'ctx>,
 
-    pub exprs:  Vec<&'ctx Node<'ctx>>,
+    pub exprs: Vec<&'ctx Node<'ctx>>,
+
+    /// This bool will be true of the `Block` has unit type, meaning that it will only be evaluated
+    /// for its side-effects.
+    pub unit: bool,
 }
 
 impl<'ctx> util::Tagged<'ctx> for Block<'ctx> {}
@@ -1002,11 +1006,34 @@ impl<'ctx> Parser<'ctx> {
 
             Kw("let") => try!(self.parse_let_expr(tok.loc)),
 
-            Kw("if") => try!(self.parse_if_expr(tok.loc))
+            Kw("if") => try!(self.parse_if_expr(tok.loc)),
 
+            Sym("{") => try!(self.parse_block(tok.loc))
 
         } else {
             return expecting("`(', `if', `let', integer, or identifier", tok);
+        }))
+    }
+
+    fn parse_block(&mut self, loc: source::Loc<'ctx>)
+    -> error::Result<'ctx, &'ctx Node<'ctx>>
+    {
+        let mut exprs = Vec::new();
+        let mut unit  = true;
+
+        while !p_delim!(self, Sym("}")) {
+            exprs.push(try!(self.parse_expr()));
+            if !p_delim!(self, Sym(";")) {
+                unit = false;
+                p_match!(self, "`}'", Sym("}"));
+                break;
+            }
+        }
+
+        Ok(self.mk_node(Block {
+            open_curly: loc,
+            exprs:       exprs,
+            unit:        unit,
         }))
     }
 
