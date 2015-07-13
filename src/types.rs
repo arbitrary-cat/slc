@@ -52,6 +52,11 @@ impl<'ctx> Context<'ctx> {
         }
     }
 
+    /// Return a reference to the unit type `()`.
+    pub fn unit(&'ctx self) -> &'ctx Type<'ctx> {
+        self.mk_type(Type::Tuple { elems: Vec::new() })
+    }
+
     /// Create a new type in the given context. This function will convert 1-element tuple types
     /// into scalars (since the language does not distinguish, but it's easier to encapsulate the
     /// special-case code here rather everywhere that might produce a 1-element tuple).
