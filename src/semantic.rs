@@ -357,3 +357,26 @@ impl<'ctx> Check<'ctx> for syntax::Block<'ctx> {
         Ok(())
     }
 }
+
+impl <'ctx> Check<'ctx> for syntax::OptCons<'ctx> {
+    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        // This function is silly. I should be using two seperate types.
+
+        use source::TokenData::*;
+        match (self.kw.data, self.val) {
+            (Kw("some"), None) => Err(error::Error::InternalError {
+                loc: Some(self.loc()),
+                msg: scat!("`some` without associated value."),
+            }),
+            (Kw("nil"), Some(..)) => Err(error::Error::InternalError {
+                loc: Some(self.loc()),
+                msg: scat!("`nil` has associated value."),
+            }),
+            (Kw("some"), Some(val)) => val.check(ctx, scope),
+
+             _ => Ok(()),
+        }
+    }
+}
