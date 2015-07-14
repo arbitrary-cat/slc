@@ -107,6 +107,47 @@ impl<'ctx> GenNode<'ctx> for IntLit<'ctx> {
     }
 }
 
+/// An constructor statement for an optional type (e.g. `? int`).
+pub struct OptCons<'ctx> {
+    /// The location of the `some` or `nil` keyword.
+    pub kw: source::Token<'ctx>,
+
+    /// If `kw` has data `Kw("some")` then this will be the expression being wrapped with some.
+    /// Otherwise it will be `None`.
+    pub val: Option<&'ctx Node<'ctx>>,
+}
+
+impl<'ctx> util::Tagged<'ctx> for OptCons<'ctx> {}
+
+impl<'ctx> AsRef<OptCons<'ctx>> for Node<'ctx> {
+    fn as_ref(&self) -> &OptCons<'ctx> {
+        match self {
+            &Node::OptCons(ref opt_cons) => opt_cons,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'ctx> Into<Node<'ctx>> for OptCons<'ctx> {
+    fn into(self) -> Node<'ctx> { Node::OptCons(self) }
+}
+
+impl<'ctx> GenNode<'ctx> for OptCons<'ctx> {
+    fn loc(&self)
+    -> source::Loc<'ctx>
+    {
+        self.kw.loc
+    }
+
+    fn text(&self)
+    -> &'ctx str
+    {
+        if let source::TokenData::Kw(txt) = self.kw.data {
+            txt
+        } else { unreachable!() }
+    }
+}
+
 /// An operator, as would be found in an expression.
 pub struct Operator<'ctx> {
     /// The token which corresponds to this operator in the source.
@@ -802,6 +843,7 @@ impl<'ctx> Parser<'ctx> {
     //      | 'bool'
     //      | '(' { Type ',' } [ Type ] ')'
     //      | 'fn' Type '->' Type
+    //      | '?' Type
     //      .
     fn parse_type<'x>(&'x mut self)
     -> error::Result<'ctx, &'ctx Type<'ctx>>
@@ -832,6 +874,11 @@ impl<'ctx> Parser<'ctx> {
                     from: from,
                     to:   to,
                 })
+            },
+
+            Sym("?") => {
+                let t = try!(self.parse_type());
+                self.mk_type(Type::Opt(t))
             },
 
             Id("int") => self.mk_type(Type::Int),
@@ -1007,6 +1054,16 @@ impl<'ctx> Parser<'ctx> {
                 }
             },
 
+            Kw("some") => {
+                let val = try!(self.parse_factor_expr()); 
+                self.mk_node(OptCons {
+                    kw: tok,
+                    val: Some(val),
+                })
+            },
+
+            Kw("nil") => self.mk_node(OptCons { kw: tok, val: None }),
+
             Kw("let") => try!(self.parse_let_expr(tok.loc)),
 
             Kw("if") => try!(self.parse_if_expr(tok.loc)),
@@ -1170,6 +1227,7 @@ where String: From<S>
 pub enum Node<'ctx> {
     Ident(Ident<'ctx>),
     IntLit(IntLit<'ctx>),
+    OptCons(OptCons<'ctx>),
     Operator(Operator<'ctx>),
     TranslationUnit(TranslationUnit<'ctx>),
     FnDecl(FnDecl<'ctx>),
@@ -1199,6 +1257,7 @@ impl<'ctx> GenNode<'ctx> for Node<'ctx> {
         match self {
             &Ident(ref n)           => n.loc(),
             &IntLit(ref n)          => n.loc(),
+            &OptCons(ref n)         => n.loc(),
             &Operator(ref n)        => n.loc(),
             &TranslationUnit(ref n) => n.loc(),
             &FnDecl(ref n)          => n.loc(),
@@ -1222,6 +1281,7 @@ impl<'ctx> GenNode<'ctx> for Node<'ctx> {
         match self {
             &Ident(ref n)           => n.text(),
             &IntLit(ref n)          => n.text(),
+            &OptCons(ref n)         => n.text(),
             &Operator(ref n)        => n.text(),
             &TranslationUnit(ref n) => n.text(),
             &FnDecl(ref n)          => n.text(),
@@ -1249,6 +1309,7 @@ impl<'ctx> cats::Show for Node<'ctx> {
         match self {
             &Ident(..)           => cat_len!("Ident"),
             &IntLit(..)          => cat_len!("IntLit"),
+            &OptCons(..)         => cat_len!("OptCons"),
             &Operator(..)        => cat_len!("Operator"),
             &TranslationUnit(..) => cat_len!("TranslationUnit"),
             &FnDecl(..)          => cat_len!("FnDecl"),
@@ -1272,6 +1333,7 @@ impl<'ctx> cats::Show for Node<'ctx> {
         match self {
             &Ident(..)           => cat_write!(w, "Ident"),
             &IntLit(..)          => cat_write!(w, "IntLit"),
+            &OptCons(..)         => cat_write!(w, "OptCons"),
             &Operator(..)        => cat_write!(w, "Operator"),
             &TranslationUnit(..) => cat_write!(w, "TranslationUnit"),
             &FnDecl(..)          => cat_write!(w, "FnDecl"),
@@ -1297,6 +1359,7 @@ impl<'ctx> util::Tagged<'ctx> for Node<'ctx> {
         match self {
             &Ident(ref n)           => n.tag(),
             &IntLit(ref n)          => n.tag(),
+            &OptCons(ref n)         => n.tag(),
             &Operator(ref n)        => n.tag(),
             &TranslationUnit(ref n) => n.tag(),
             &FnDecl(ref n)          => n.tag(),

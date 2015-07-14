@@ -125,6 +125,7 @@ impl<'ctx> CBuffer<'ctx> {
             &Type::Bool => strcat!(self.scratch, PREFIX, "bool_t"),
             &Type::Func { .. }  => strcat!(self.scratch, PREFIX, "fn", uniq, "_t"),
             &Type::Tuple { .. } => strcat!(self.scratch, PREFIX, "tuple", uniq, "_t"),
+            &Type::Opt(..)      => strcat!(self.scratch, PREFIX, "opt", uniq, "_t"),
         }
 
         let name = ctx.strings.alloc(&self.scratch[..]);
@@ -185,6 +186,7 @@ impl<'ctx> Type<'ctx> {
                 }
                 fcatln!(c.typedefs_txt, ");\n").ok();
             }
+
             &Type::Tuple { ref elems } => {
                 fcatln!(c.typedefs_txt, "typedef struct ", td, " {\n").ok();
                 for (idx, &elem) in elems.iter().enumerate() {
@@ -194,8 +196,23 @@ impl<'ctx> Type<'ctx> {
                 }
                 fcatln!(c.typedefs_txt, "} ", td, ";\n").ok();
             }
+
             &Type::Int | &Type::Bool => {
                 fcatln!(c.typedefs_txt, "typedef int ", td, ";\n").ok();
+            }
+
+            &Type::Opt(&Type::Unit) => {
+                fcatln!(c.typedefs_txt, "typedef int ", td, ";\n").ok();
+            }
+
+            &Type::Opt(t) => {
+                let inner_t = try!(c.typedef(ctx, t));
+
+                fcatln!(c.typedefs_txt, "typedef struct ", td, " {").ok();
+                fcatln!(c.typedefs_txt, "\t", "int tag;").ok();
+                fcatln!(c.typedefs_txt, "\t", inner_t, " val;").ok();
+                fcatln!(c.typedefs_txt, "} ", td, ";\n").ok();
+
             }
 
             &Type::Unit => {

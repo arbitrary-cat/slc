@@ -61,3 +61,12 @@ fn dbl_snd(x, y, z: int)
     let res = snd (x, y, z);
     dbl res
 }
+
+fn over_six(x: int)
+: ? int {
+    if x > 6 {
+        some (x - 6)
+    } else {
+        nil
+    }
+}

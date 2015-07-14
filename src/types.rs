@@ -29,6 +29,7 @@ pub enum Type<'ctx> {
     Unit,
     Int,
     Bool,
+    Opt(&'ctx Type<'ctx>),
     Func {
         from: &'ctx Type<'ctx>,
         to:   &'ctx Type<'ctx>,
@@ -87,6 +88,7 @@ impl<'ctx> cats::Show for Type<'ctx> {
             &Type::Int                 => cat_len!("int"),
             &Type::Unit                => cat_len!("()"),
             &Type::Bool                => cat_len!("bool"),
+            &Type::Opt(t)              => cat_len!("?", t),
             &Type::Func { from, to }   => cat_len!("func ", from, " -> ", to),
             &Type::Tuple { ref elems } => {
                 let mut len = cat_len!("(");
@@ -103,6 +105,7 @@ impl<'ctx> cats::Show for Type<'ctx> {
             &Type::Int                 => cat_write!(w, "int"),
             &Type::Unit                => cat_write!(w, "()"),
             &Type::Bool                => cat_write!(w, "bool"),
+            &Type::Opt(t)              => cat_write!(w, "?", t),
             &Type::Func { from, to }   => cat_write!(w, "func ", from, " -> ", to),
             &Type::Tuple { ref elems } => {
                 try!(cat_write!(w, "("));
