@@ -108,31 +108,27 @@ impl<'ctx> GenNode<'ctx> for IntLit<'ctx> {
 }
 
 /// An constructor statement for an optional type (e.g. `? int`).
-pub struct OptCons<'ctx> {
-    /// The location of the `some` or `nil` keyword.
+pub struct Nil<'ctx> {
+    /// The location of the `nil` keyword.
     pub kw: source::Token<'ctx>,
-
-    /// If `kw` has data `Kw("some")` then this will be the expression being wrapped with some.
-    /// Otherwise it will be `None`.
-    pub val: Option<&'ctx Node<'ctx>>,
 }
 
-impl<'ctx> util::Tagged<'ctx> for OptCons<'ctx> {}
+impl<'ctx> util::Tagged<'ctx> for Nil<'ctx> {}
 
-impl<'ctx> AsRef<OptCons<'ctx>> for Node<'ctx> {
-    fn as_ref(&self) -> &OptCons<'ctx> {
+impl<'ctx> AsRef<Nil<'ctx>> for Node<'ctx> {
+    fn as_ref(&self) -> &Nil<'ctx> {
         match self {
-            &Node::OptCons(ref opt_cons) => opt_cons,
+            &Node::Nil(ref nil) => nil,
             _ => unreachable!(),
         }
     }
 }
 
-impl<'ctx> Into<Node<'ctx>> for OptCons<'ctx> {
-    fn into(self) -> Node<'ctx> { Node::OptCons(self) }
+impl<'ctx> Into<Node<'ctx>> for Nil<'ctx> {
+    fn into(self) -> Node<'ctx> { Node::Nil(self) }
 }
 
-impl<'ctx> GenNode<'ctx> for OptCons<'ctx> {
+impl<'ctx> GenNode<'ctx> for Nil<'ctx> {
     fn loc(&self)
     -> source::Loc<'ctx>
     {
@@ -142,9 +138,45 @@ impl<'ctx> GenNode<'ctx> for OptCons<'ctx> {
     fn text(&self)
     -> &'ctx str
     {
-        if let source::TokenData::Kw(txt) = self.kw.data {
-            txt
-        } else { unreachable!() }
+        "<nil>"
+    }
+}
+
+
+pub struct SomeCons<'ctx> {
+    /// The location of the `some` keyword.
+    pub kw: source::Token<'ctx>,
+
+    /// The value being passed to `some`, a FactorExpr.
+    pub val: &'ctx Node<'ctx>,
+}
+
+impl<'ctx> util::Tagged<'ctx> for SomeCons<'ctx> {}
+
+impl<'ctx> AsRef<SomeCons<'ctx>> for Node<'ctx> {
+    fn as_ref(&self) -> &SomeCons<'ctx> {
+        match self {
+            &Node::SomeCons(ref opt_cons) => opt_cons,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'ctx> Into<Node<'ctx>> for SomeCons<'ctx> {
+    fn into(self) -> Node<'ctx> { Node::SomeCons(self) }
+}
+
+impl<'ctx> GenNode<'ctx> for SomeCons<'ctx> {
+    fn loc(&self)
+    -> source::Loc<'ctx>
+    {
+        self.kw.loc
+    }
+
+    fn text(&self)
+    -> &'ctx str
+    {
+        "<some cons>"
     }
 }
 
@@ -525,6 +557,10 @@ pub struct LetExpr<'ctx> {
     /// The pattern being assigned to.
     pub pat: &'ctx Node<'ctx>,
 
+    /// A let expression may be accompanied a type annotation, which is used to aid inference and
+    /// ensure agreement between the compiler and programmer about the type of the expression.
+    pub ty:  Option<&'ctx Type<'ctx>>,
+
     /// The value being destructured into the pattern.
     pub val: &'ctx Node<'ctx>,
 
@@ -842,7 +878,7 @@ impl<'ctx> Parser<'ctx> {
     // Type = 'int'
     //      | 'bool'
     //      | '(' { Type ',' } [ Type ] ')'
-    //      | 'fn' Type '->' Type
+    //      | 'fn' Type ':' Type
     //      | '?' Type
     //      .
     fn parse_type<'x>(&'x mut self)
@@ -867,7 +903,7 @@ impl<'ctx> Parser<'ctx> {
 
             Kw("fn") => {
                 let from = try!(self.parse_type());
-                p_match!(self, "`->'", Sym("->"));
+                p_match!(self, "`:'", Sym(":"));
                 let to = try!(self.parse_type());
 
                 self.mk_type(Type::Func {
@@ -1056,13 +1092,13 @@ impl<'ctx> Parser<'ctx> {
 
             Kw("some") => {
                 let val = try!(self.parse_factor_expr()); 
-                self.mk_node(OptCons {
-                    kw: tok,
-                    val: Some(val),
+                self.mk_node(SomeCons {
+                    kw:  tok,
+                    val: val,
                 })
             },
 
-            Kw("nil") => self.mk_node(OptCons { kw: tok, val: None }),
+            Kw("nil") => self.mk_node(Nil { kw: tok }),
 
             Kw("let") => try!(self.parse_let_expr(tok.loc)),
 
@@ -1116,6 +1152,7 @@ impl<'ctx> Parser<'ctx> {
         Ok(self.mk_node(LetExpr {
             let_loc: loc,
             pat:     pat,
+            ty:      None,
             val:     val,
             body:    body,
         }))
@@ -1221,13 +1258,16 @@ where String: From<S>
     }
 }
 
+pub type No<'ctx> = &'ctx Node<'ctx>;
+
 /// A node in the syntax tree. This enum wraps each possible node type to allow for a sort of
 /// reflection. The `Node` type provides all caching and annotation methods on top of the individual
 /// methods, including ICE generation if the wrong operation is called on the wrong type.
 pub enum Node<'ctx> {
     Ident(Ident<'ctx>),
     IntLit(IntLit<'ctx>),
-    OptCons(OptCons<'ctx>),
+    Nil(Nil<'ctx>),
+    SomeCons(SomeCons<'ctx>),
     Operator(Operator<'ctx>),
     TranslationUnit(TranslationUnit<'ctx>),
     FnDecl(FnDecl<'ctx>),
@@ -1257,7 +1297,8 @@ impl<'ctx> GenNode<'ctx> for Node<'ctx> {
         match self {
             &Ident(ref n)           => n.loc(),
             &IntLit(ref n)          => n.loc(),
-            &OptCons(ref n)         => n.loc(),
+            &Nil(ref n)             => n.loc(),
+            &SomeCons(ref n)        => n.loc(),
             &Operator(ref n)        => n.loc(),
             &TranslationUnit(ref n) => n.loc(),
             &FnDecl(ref n)          => n.loc(),
@@ -1281,7 +1322,8 @@ impl<'ctx> GenNode<'ctx> for Node<'ctx> {
         match self {
             &Ident(ref n)           => n.text(),
             &IntLit(ref n)          => n.text(),
-            &OptCons(ref n)         => n.text(),
+            &Nil(ref n)             => n.text(),
+            &SomeCons(ref n)        => n.text(),
             &Operator(ref n)        => n.text(),
             &TranslationUnit(ref n) => n.text(),
             &FnDecl(ref n)          => n.text(),
@@ -1309,7 +1351,8 @@ impl<'ctx> cats::Show for Node<'ctx> {
         match self {
             &Ident(..)           => cat_len!("Ident"),
             &IntLit(..)          => cat_len!("IntLit"),
-            &OptCons(..)         => cat_len!("OptCons"),
+            &Nil(..)             => cat_len!("Nil"),
+            &SomeCons(..)        => cat_len!("SomeCons"),
             &Operator(..)        => cat_len!("Operator"),
             &TranslationUnit(..) => cat_len!("TranslationUnit"),
             &FnDecl(..)          => cat_len!("FnDecl"),
@@ -1333,7 +1376,8 @@ impl<'ctx> cats::Show for Node<'ctx> {
         match self {
             &Ident(..)           => cat_write!(w, "Ident"),
             &IntLit(..)          => cat_write!(w, "IntLit"),
-            &OptCons(..)         => cat_write!(w, "OptCons"),
+            &Nil(..)             => cat_write!(w, "Nil"),
+            &SomeCons(..)        => cat_write!(w, "SomeCons"),
             &Operator(..)        => cat_write!(w, "Operator"),
             &TranslationUnit(..) => cat_write!(w, "TranslationUnit"),
             &FnDecl(..)          => cat_write!(w, "FnDecl"),
@@ -1359,7 +1403,8 @@ impl<'ctx> util::Tagged<'ctx> for Node<'ctx> {
         match self {
             &Ident(ref n)           => n.tag(),
             &IntLit(ref n)          => n.tag(),
-            &OptCons(ref n)         => n.tag(),
+            &Nil(ref n)             => n.tag(),
+            &SomeCons(ref n)        => n.tag(),
             &Operator(ref n)        => n.tag(),
             &TranslationUnit(ref n) => n.tag(),
             &FnDecl(ref n)          => n.tag(),

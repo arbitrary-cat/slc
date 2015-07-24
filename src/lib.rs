@@ -48,37 +48,4 @@ pub mod types;
 
 pub mod util;
 
-pub mod compiler {
-    use expr;
-    use semantic;
-    use source;
-    use syntax;
-    use types;
-    use util;
-
-    pub struct Context<'ctx> {
-        pub file:    &'ctx source::File,
-        pub syntax:  syntax::Context<'ctx>,
-        pub types:   types::Context<'ctx>,
-
-        pub ty_map:  expr::TypeMap<'ctx>,
-        pub scopes:  semantic::ScopeMap<'ctx>,
-        pub strings: util::StrArena,
-    }
-
-    impl<'ctx> Context<'ctx> {
-        pub fn new(f: &'ctx source::File) -> Context<'ctx> {
-            Context {
-                file:    f,
-                syntax:  syntax::Context::new(),
-                types:   types::Context::new(),
-                ty_map:  expr::TypeMap::new(),
-                scopes:  semantic::ScopeMap::new(),
-                strings: util::StrArena::new(),
-            }
-        }
-    }
-
-    /// Convenience type to avoid writing the same typename twice.
-    pub type CtxRef<'ctx> = &'ctx Context<'ctx>;
-}
+pub mod compiler;

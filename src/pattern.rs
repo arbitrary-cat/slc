@@ -18,15 +18,16 @@
 use codegen::CBuffer;
 use compiler::CtxRef;
 use error;
+use expr;
 use semantic::Scope;
 use syntax::{self, GenNode};
-use types::Type;
+use types::{Type, Ty};
 
 
 pub trait Pattern<'ctx> {
     /// Declare in `scope` all identifiers introduced by a pattern to which an expression of type
     /// `ty` will be assigned.
-    fn decl(&'ctx self, ty: &'ctx Type<'ctx>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    fn decl(&'ctx self, ty: Ty<'ctx>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     ;
 
@@ -40,7 +41,7 @@ pub trait Pattern<'ctx> {
 }
 
 impl<'ctx> Pattern<'ctx> for syntax::Node<'ctx> {
-    fn decl(&'ctx self, ty: &'ctx Type<'ctx>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    fn decl(&'ctx self, ty: Ty<'ctx>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     {
         use syntax::Node::*;
@@ -73,11 +74,11 @@ impl<'ctx> Pattern<'ctx> for syntax::Node<'ctx> {
 }
 
 impl<'ctx> Pattern<'ctx> for syntax::Ident<'ctx> {
-    fn decl(&'ctx self, ty: &'ctx Type<'ctx>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    fn decl(&'ctx self, ty: Ty<'ctx>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     {
         // Annotate the identifier with its type.
-        ctx.ty_map.insert(self, ty);
+        try!(ctx.set_annot(expr::TypeAnnot, self, ty));
 
         Ok(if self.text() != "_" { try!(scope.decl(self, ty)) })
     }
@@ -88,7 +89,7 @@ impl<'ctx> Pattern<'ctx> for syntax::Ident<'ctx> {
         if self.text() == "_" { return Ok(()) }
 
         let c_t = {
-            let ty = ctx.ty_map.get(self).expect("Ident pattern not annotated with type.");
+            let ty = try!(ctx.get_annot(self.loc(), expr::TypeAnnot, self));
             try!(c.typedef(ctx, ty))
         };
 
@@ -99,7 +100,7 @@ impl<'ctx> Pattern<'ctx> for syntax::Ident<'ctx> {
 }
 
 impl<'ctx> Pattern<'ctx> for syntax::TuplePattern<'ctx> {
-    fn decl(&'ctx self, ty: &'ctx Type<'ctx>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    fn decl(&'ctx self, ty: Ty<'ctx>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     {
         if let &Type::Tuple { ref elems } = ty {

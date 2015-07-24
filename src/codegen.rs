@@ -19,6 +19,7 @@ use std::io;
 
 use compiler::CtxRef;
 use error;
+use expr;
 use pattern::Pattern;
 use syntax::{self, Node, GenNode};
 use types::Type;
@@ -126,6 +127,10 @@ impl<'ctx> CBuffer<'ctx> {
             &Type::Func { .. }  => strcat!(self.scratch, PREFIX, "fn", uniq, "_t"),
             &Type::Tuple { .. } => strcat!(self.scratch, PREFIX, "tuple", uniq, "_t"),
             &Type::Opt(..)      => strcat!(self.scratch, PREFIX, "opt", uniq, "_t"),
+            &Type::Unresolved   => return Err(error::Error::InternalError {
+                loc: None,
+                msg: scat!("unresolved type at codegen."),
+            })
         }
 
         let name = ctx.strings.alloc(&self.scratch[..]);
@@ -136,7 +141,6 @@ impl<'ctx> CBuffer<'ctx> {
 
         Ok(name)
     }
-
 
     /// Return a unique temporary name, associated with this expression. `temp_for` always returns
     /// the same string for the same expression.
@@ -200,6 +204,11 @@ impl<'ctx> Type<'ctx> {
             &Type::Int | &Type::Bool => {
                 fcatln!(c.typedefs_txt, "typedef int ", td, ";\n").ok();
             }
+
+            &Type::Unresolved => return Err(error::Error::InternalError {
+                loc: None,
+                msg: scat!("cannot emit typedef for unresolved type."),
+            }),
 
             &Type::Opt(&Type::Unit) => {
                 fcatln!(c.typedefs_txt, "typedef int ", td, ";\n").ok();
@@ -465,7 +474,7 @@ impl<'ctx> EmitC<'ctx> for syntax::Tuple<'ctx> {
     -> error::Result<'ctx, ()>
     {
         let c_t = {
-            let ty = ctx.ty_map.get(self).expect("Tuple not annotated with type.");
+            let ty = try!(ctx.get_annot(self.loc(), expr::TypeAnnot, self));
             try!(c.typedef(ctx, ty))
         };
 
@@ -507,7 +516,7 @@ impl<'ctx> EmitC<'ctx> for syntax::FnCall<'ctx> {
         use syntax::Tuple;
 
         let ret_t = {
-            let ty = ctx.ty_map.get(self).expect("Fn Call not annotated with type.");
+            let ty = try!(ctx.get_annot(self.loc(), expr::TypeAnnot, self));
             try!(c.typedef(ctx, ty))
         };
 
@@ -535,7 +544,7 @@ impl<'ctx> EmitC<'ctx> for syntax::FnCall<'ctx> {
                     try!(elem.emit(ctx, c));
                 }
             }
-            _ => match ctx.ty_map.get(self.arg).expect("Fn Argument not annotated with type.") {
+            _ => match try!(ctx.get_annot(self.loc(), expr::TypeAnnot, self)) {
 
                 &Type::Tuple { ref elems } => {
                     for (idx, _) in elems.iter().enumerate() {
@@ -569,12 +578,12 @@ impl<'ctx> EmitC<'ctx> for syntax::IfExpr<'ctx> {
     -> error::Result<'ctx, ()>
     {
         let if_t = {
-            let ty = ctx.ty_map.get(self).expect("If Expr not annotated with type.");
+            let ty = try!(ctx.get_annot(self.loc(), expr::TypeAnnot, self));
             try!(c.typedef(ctx, ty))
         };
 
         let tmp_id = c.temp_for("ifres", ctx, self);
-        
+
         try!(self.cond.depends(ctx, c));
 
         fcat!(c.fn_impls_txt, c.indent, if_t, " ", tmp_id, "; if (").ok();
@@ -645,7 +654,7 @@ impl<'ctx> EmitC<'ctx> for syntax::LetExpr<'ctx> {
             // Declare the temporary that will hold the value of the let expression.
             let tmp = c.temp_for("let", ctx, self);
             let body_t = {
-                let ty = ctx.ty_map.get(body).expect("Let body not annotated with type.");
+                let ty = try!(ctx.get_annot(body.loc(), expr::TypeAnnot, body));
                 try!(c.typedef(ctx, ty))
             };
 
@@ -664,7 +673,7 @@ impl<'ctx> EmitC<'ctx> for syntax::LetExpr<'ctx> {
         let field = c.temp_for("pat", ctx, self.pat);
 
         let val_t = {
-            let ty = ctx.ty_map.get(self.val).expect("Let RHS not annotated with type.");
+            let ty = try!(ctx.get_annot(self.val.loc(), expr::TypeAnnot, self.val));
             try!(c.typedef(ctx, ty))
         };
 
@@ -712,7 +721,7 @@ impl<'ctx> EmitC<'ctx> for syntax::Block<'ctx> {
         let tmp = c.temp_for("block", ctx, self);
 
         let blk_t = {
-            let ty = ctx.ty_map.get(self).expect("Block not annotated with type.");
+            let ty = try!(ctx.get_annot(self.loc(), expr::TypeAnnot, self));
             try!(c.typedef(ctx, ty))
         };
 

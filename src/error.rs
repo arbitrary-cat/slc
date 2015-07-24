@@ -101,6 +101,9 @@ pub enum Error<'ctx> {
         pat_desc: &'static str,
         ty:       &'ctx Type<'ctx>,
     },
+    CannotResolveType {
+        loc: source::Loc<'ctx>,
+    },
     TuplePatternCountMismatch {
         pat_loc:  source::Loc<'ctx>,
         ty:       &'ctx Type<'ctx>,
@@ -175,6 +178,9 @@ impl<'ctx> Error<'ctx> {
             }
             &PatternTypeMismatch { pat_loc, pat_desc, ty } => {
                 sl_err!(pat_loc, "cannot match type `", ty, "' against ", pat_desc);
+            }
+            &CannotResolveType { loc } => {
+                sl_err!(loc, "cannot resolve type for `nil' alone, need a hint.");
             }
             &TuplePatternCountMismatch { pat_loc, ty } => {
                 sl_err!(pat_loc, "incorrect number of tuple elements for type `", ty, "'");

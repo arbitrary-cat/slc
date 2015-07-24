@@ -15,224 +15,50 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use compiler::CtxRef;
-use error;
-use syntax::{self, GenNode, Node, Ident};
-use semantic::Scope;
-use types::Type;
+use compiler::{self, CtxRef};
+use types::Ty;
 use util;
 
-/// The table used to annotate expression nodes with their type.
-pub type TypeMap<'ctx> = util::TagMap<'ctx, &'ctx Type<'ctx>>;
+use cats;
 
-/// A trait for types that can be an expression in the syntax tree.
-pub trait Expr<'ctx> {
-    /// Return the type of this node in the given context.
-    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, scope: &Scope<'ctx>)
-    -> error::Result<'ctx, &'ctx Type<'ctx>>
-    ;
+use std::io;
+
+/// Compiler context for processing expressions.
+pub struct Context<'ctx> {
+    ty_map: util::TagMap<'ctx, Ty<'ctx>>,
 }
 
-impl<'ctx> Expr<'ctx> for Node<'ctx> {
-    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, scope: &Scope<'ctx>)
-    -> error::Result<'ctx, &'ctx Type<'ctx>>
-    {
-        use syntax::Node::*;
-
-        if let Some(ty) = ctx.ty_map.get(self) {
-            Ok(ty)
-        } else {
-            let ty = match self {
-                &Ident(ref ident)      => try!(ident.type_in(ctx, scope)),
-                &IntLit(ref int_lit)   => try!(int_lit.type_in(ctx, scope)),
-                &LogicOp(ref logic_op) => try!(logic_op.type_in(ctx, scope)),
-                &BinOp(ref bin_op)     => try!(bin_op.type_in(ctx, scope)),
-                &FnCall(ref fn_call)   => try!(fn_call.type_in(ctx, scope)),
-                &IfExpr(ref if_expr)   => try!(if_expr.type_in(ctx, scope)),
-                &LetExpr(ref let_expr) => try!(let_expr.type_in(ctx, scope)),
-                &Tuple(ref tuple)      => try!(tuple.type_in(ctx, scope)),
-                &Block(ref block)      => try!(block.type_in(ctx, scope)),
-
-                _ => return Err(error::Error::InternalError {
-                    loc: Some(self.loc()),
-                    msg: scat!("Node type `", self, "' is not an expression"),
-                }),
-            };
-
-            ctx.ty_map.insert(self, ty);
-
-            Ok(ty)
+impl<'ctx> Context<'ctx> {
+    pub fn new() -> Context<'ctx> {
+        Context {
+            ty_map: util::TagMap::new(),
         }
     }
 }
 
-impl<'ctx> Expr<'ctx> for syntax::Ident<'ctx> {
-    fn type_in(&'ctx self, _ctx: CtxRef<'ctx>, scope: &Scope<'ctx>)
-    -> error::Result<'ctx, &'ctx Type<'ctx>>
+/// TypeAnnot is the tag for type-annotations on expression nodes.
+pub struct TypeAnnot;
+
+impl cats::Show for TypeAnnot {
+    fn len(&self)
+    -> usize
     {
-        scope.lookup(self).map(|sym| sym.ty)
+        cat_len!("expr::TypeAnnot")
+    }
+
+    fn write<W: io::Write>(&self, w: &mut W)
+    -> io::Result<usize>
+    {
+        cat_write!(w, "expr::TypeAnnot")
     }
 }
 
-impl<'ctx> Expr<'ctx> for syntax::IntLit<'ctx> {
-    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, _scope: &Scope<'ctx>)
-    -> error::Result<'ctx, &'ctx Type<'ctx>>
+impl<'ctx> compiler::Annotation<'ctx> for TypeAnnot {
+    type Data = Ty<'ctx>;
+
+    fn get_map(&self, ctx: CtxRef<'ctx>)
+    -> &'ctx util::TagMap<'ctx, Ty<'ctx>>
     {
-        Ok(ctx.types.mk_type(Type::Int))
-    }
-}
-
-impl<'ctx> Expr<'ctx> for syntax::LogicOp<'ctx> {
-    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, scope: &Scope<'ctx>)
-    -> error::Result<'ctx, &'ctx Type<'ctx>>
-    {
-        if try!(self.first.type_in(ctx, scope)) != &Type::Bool {
-            Err(error::Error::LogicOperandNotBool {
-                op_loc:   self.first.loc(),
-                op_t:     try!(self.first.type_in(ctx, scope)),
-                operator: self.op,
-            })
-        } else if try!(self.first.type_in(ctx, scope)) != &Type::Bool {
-            Err(error::Error::LogicOperandNotBool {
-                op_loc:   self.second.loc(),
-                op_t:     try!(self.second.type_in(ctx, scope)),
-                operator: self.op,
-            })
-        } else {
-            Ok(ctx.types.mk_type(Type::Bool))
-        }
-    }
-}
-
-
-impl<'ctx> Expr<'ctx> for syntax::BinOp<'ctx> {
-    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, scope: &Scope<'ctx>)
-    -> error::Result<'ctx, &'ctx Type<'ctx>>
-    {
-        let lhs_t = try!(self.lhs.type_in(ctx, scope));
-        let rhs_t = try!(self.rhs.type_in(ctx, scope));
-
-        if lhs_t != rhs_t {
-            return Err(error::Error::BinOpTypeMismatch {
-                op:    self.op,
-                lhs_t: lhs_t,
-                rhs_t: rhs_t,
-            })
-        }
-
-        Ok(match self.op.text() {
-            "<" | ">" | "<=" | ">=" | "==" | "!=" => ctx.types.mk_type(Type::Bool),
-            _                                     => lhs_t,
-        })
-    }
-}
-
-
-impl<'ctx> Expr<'ctx> for syntax::FnCall<'ctx> {
-    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, scope: &Scope<'ctx>)
-    -> error::Result<'ctx, &'ctx Type<'ctx>>
-    {
-        match try!(self.fun.type_in(ctx, scope)) {
-            &Type::Func { from, to } => {
-                let arg_t = try!(self.arg.type_in(ctx, scope));
-                if from != arg_t {
-                    // The function's argument is of the wrong type.
-                    Err(error::Error::FnArgTypeMismatch {
-                        arg:   self.arg,
-                        exp_t: from,
-                        arg_t: arg_t,
-                    })
-                } else {
-                    Ok(to)
-                } 
-            }
-
-            // `fun` isn't a function.
-            ty => Err(error::Error::NonFnCalled {
-                ty:   ty,
-                site: self.fun,
-            })
-        }
-    }
-}
-
-
-impl<'ctx> Expr<'ctx> for syntax::IfExpr<'ctx> {
-    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, scope: &Scope<'ctx>)
-    -> error::Result<'ctx, &'ctx Type<'ctx>>
-    {
-        let cond_t = try!(self.cond.type_in(ctx, scope));
-        let yes_t  = try!(self.yes.type_in(ctx, scope));
-        let no_t   = if let Some(no) = self.no {
-            try!(no.type_in(ctx, scope))
-        } else {
-            return Err(error::Error::Unsupported {
-                msg:  "if-exprs without a corresponding else are currently unsupported",
-                site: self.if_loc,
-            });
-        };
-
-        if cond_t != &Type::Bool {
-            Err(error::Error::IfCondNotBool {
-                if_loc: self.if_loc,
-                cond_t: cond_t,
-            })
-        } else if yes_t != no_t {
-            Err(error::Error::IfElseTypeMismatch {
-                if_loc: self.if_loc,
-                yes_t:  yes_t,
-                no_t:   no_t,
-            })
-        } else {
-            Ok(yes_t)
-        }
-    }
-}
-
-
-impl<'ctx> Expr<'ctx> for syntax::LetExpr<'ctx> {
-    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, _scope: &Scope<'ctx>)
-    -> error::Result<'ctx, &'ctx Type<'ctx>>
-    {
-        if let Some(body) = self.body {
-            let expr_scope = match ctx.scopes.get(body) {
-                Some(expr_scope) => expr_scope,
-                None => return Err(error::Error::InternalError {
-                    loc: Some(self.loc()),
-                    msg: scat!("let-expr's body not annotated with scope"),
-                }),
-            };
-
-            body.type_in(ctx, &expr_scope)
-        } else {
-            Ok(ctx.types.unit())
-        }
-    }
-}
-
-
-impl<'ctx> Expr<'ctx> for syntax::Tuple<'ctx> {
-    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, scope: &Scope<'ctx>)
-    -> error::Result<'ctx, &'ctx Type<'ctx>>
-    {
-        let mut elems_t = Vec::new();
-
-        for &elem in self.elems.iter() {
-            elems_t.push(try!(elem.type_in(ctx, scope)));
-        }
-
-        Ok(ctx.types.mk_type(Type::Tuple { elems: elems_t }))
-    }
-}
-
-impl<'ctx> Expr<'ctx> for syntax::Block<'ctx> {
-    fn type_in(&'ctx self, ctx: CtxRef<'ctx>, scope: &Scope<'ctx>)
-    -> error::Result<'ctx, &'ctx Type<'ctx>>
-    {
-        Ok(if self.unit {
-            ctx.types.unit()
-        } else {
-            try!(self.exprs.last().unwrap().type_in(ctx, scope))
-        })
+        &ctx.expr.ty_map
     }
 }

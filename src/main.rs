@@ -57,11 +57,11 @@ pub fn main() {
 
     let mut global = semantic::Scope::new();
     
-    main_try!(tu.check(&ctx, &mut global));
+    // main_try!(tu.check(&ctx, &mut global));
 
     let mut cbuf = codegen::CBuffer::new();
 
-    main_try!(tu.emit(&ctx, &mut cbuf));
+    // main_try!(tu.emit(&ctx, &mut cbuf));
 
     path.set_extension("c");
     let mut c_file = fs::File::create(&path).unwrap();

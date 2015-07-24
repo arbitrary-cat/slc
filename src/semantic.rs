@@ -21,16 +21,15 @@ use std::rc::Rc;
 
 use compiler::CtxRef;
 use error::{self, Error};
-use expr::Expr;
 use pattern::Pattern;
-use syntax::{self, Ident, GenNode};
-use types::Type;
+use syntax::{self, Ident, GenNode, No};
+use types::{Ty, Type};
 use util;
 
 #[derive(Clone)]
 pub struct Symbol<'ctx> {
     pub decl: &'ctx Ident<'ctx>,
-    pub ty:   &'ctx Type<'ctx>,
+    pub ty:   Ty<'ctx>,
 }
 
 pub struct ScopeInner<'ctx> {
@@ -53,7 +52,7 @@ impl<'ctx> Scope<'ctx> {
         }
     }
 
-    pub fn decl(&mut self, id: &'ctx Ident<'ctx>, ty: &'ctx Type<'ctx>)
+    pub fn decl(&mut self, id: &'ctx Ident<'ctx>, ty: Ty<'ctx>)
     -> error::Result<'ctx, ()>
     {
 
@@ -105,278 +104,66 @@ pub type ScopeMap<'ctx> = util::TagMap<'ctx, Scope<'ctx>>;
 
 /// A trait for nodes that can be checked for semantic validity.
 pub trait Check<'ctx> {
-    /// This method will be called exactly once per node. It should declare variables, set up
-    /// scopes, and annotate nodes.
-    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    /// The methods of this trait each constitute a *compiler pass*, and they should be run in the
+    /// order that they are listed here:
+
+    /// Declare identifiers with (possibly unresolved) types for scopes within this syntax element.
+    fn decl(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    -> error::Result<'ctx, ()>
+    ;
+
+    /// Resolve the type of this syntax element and/or any typed children it might have.
+    fn resolve(&'ctx self, hint: Option<Ty<'ctx>>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    -> error::Result<'ctx, ()>
+    ;
+
+    /// Verify that this syntax element and all of its children are semantically sound.
+    fn check(&'ctx self, ctx: CtxRef<'ctx>)
     -> error::Result<'ctx, ()>
     ;
 }
 
-impl<'ctx> Check<'ctx> for syntax::Node<'ctx> {
-    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+impl<'ctx> Check<'ctx> for No<'ctx> {
+
+    fn decl(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     {
         use syntax::Node::*;
 
         match self {
-            &TranslationUnit(ref translation_unit) => translation_unit.check(ctx, scope),
-            &FnDecl(ref fn_decl)                   => fn_decl.check(ctx, scope),
-            &BinOp(ref bin_op)                     => bin_op.check(ctx, scope),
-            &Ident(ref ident)                      => ident.check(ctx, scope),
-            &Tuple(ref tuple)                      => tuple.check(ctx, scope),
-            &FnCall(ref fn_call)                   => fn_call.check(ctx, scope),
-            &IfExpr(ref if_expr)                   => if_expr.check(ctx, scope),
-            &IntLit(ref int_lit)                   => int_lit.check(ctx, scope),
-            &LetExpr(ref let_expr)                 => let_expr.check(ctx, scope),
-            &Block(ref block)                      => block.check(ctx, scope),
 
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
-                msg: scat!("No semantic checker for node type `", self, "'"),
+                msg: scat!("No semantic::Check::check pass for node type `", self, "'"),
             }),
         }
     }
-}
 
-impl<'ctx> Check<'ctx> for syntax::TranslationUnit<'ctx> {
-    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    fn resolve(&'ctx self, hint: Option<Ty<'ctx>>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     {
-        for &fn_decl in self.fn_decls.iter() {
-            try!(fn_decl.check(ctx, scope));
-        }
+        use syntax::Node::*;
 
-        Ok(())
-    }
-}
+        match self {
 
-impl<'ctx> Check<'ctx> for syntax::FnDecl<'ctx> {
-    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
-    -> error::Result<'ctx, ()>
-    {
-        // Count the number of arguments the function has
-        let n_args = self.args.iter()
-                              .fold(0, |n, &arg| {
-                                  let var_decl: &syntax::VarDecl<'ctx> = arg.as_ref();
-                                  var_decl.names.len() + n
-                              });
-
-        let mut body_scope = scope.child();
-
-        // Construct the function's argument type
-        let from = {
-            let mut elems = Vec::with_capacity(n_args);
-
-            for var_decl in self.args.iter().map(|a| -> &'ctx syntax::VarDecl<'ctx> { a.as_ref() }) {
-                for &name in var_decl.names.iter() {
-                    try!(body_scope.decl(name.as_ref(), var_decl.ty));
-                    elems.push(var_decl.ty);
-                }
-            }
-
-            ctx.types.mk_type(Type::Tuple { elems: elems })
-        };
-
-        // Declare the function in its parent scope.
-        let fn_t = ctx.types.mk_type(Type::Func { from: from, to: self.to });
-        try!(scope.decl(self.name.as_ref(), fn_t));
-
-        // Annotate the function body with its scope.
-        ctx.scopes.insert(self.body, body_scope.clone());
-
-
-        try!(self.body.check(ctx, &mut body_scope));
-
-        let body_t = try!(self.body.type_in(ctx, &mut body_scope));
-
-        if body_t != self.to {
-            return Err(error::Error::FnBodyTypeMismatch {
-                 name:  self.name.as_ref(),
-                 exp_t: self.to,
-                 got_t: body_t,
-            })
-        }
-
-        Ok(())
-    }
-}
-
-
-impl<'ctx> Check<'ctx> for syntax::Ident<'ctx> {
-    /// `check` should only be called on an Ident in an expression context.
-    fn check(&'ctx self, _ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
-    -> error::Result<'ctx, ()>
-    {
-        try!(scope.lookup(self));
-        Ok(())
-    }
-}
-
-impl<'ctx> Check<'ctx> for syntax::BinOp<'ctx> {
-    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
-    -> error::Result<'ctx, ()>
-    {
-        try!(self.lhs.check(ctx, scope));
-        try!(self.rhs.check(ctx, scope));
-
-        let lhs_t = try!(self.lhs.type_in(ctx, scope));
-        let rhs_t = try!(self.rhs.type_in(ctx, scope));
-
-        if lhs_t != rhs_t {
-            Err(error::Error::BinOpTypeMismatch {
-                op:    self.op,
-                lhs_t: lhs_t,
-                rhs_t: rhs_t,
-            })
-        } else { Ok(()) }
-    }
-}
-
-impl<'ctx> Check<'ctx> for syntax::Tuple<'ctx> {
-    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
-    -> error::Result<'ctx, ()>
-    {
-        for &elem in self.elems.iter() {
-            try!(elem.check(ctx, scope));
-            try!(elem.type_in(ctx, scope));
-        }
-
-        Ok(())
-    }
-}
-
-impl<'ctx> Check<'ctx> for syntax::FnCall<'ctx> {
-    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
-    -> error::Result<'ctx, ()>
-    {
-        try!(self.fun.check(ctx, scope));
-        try!(self.arg.check(ctx, scope));
-
-        let from_t = match try!(self.fun.type_in(ctx, scope)) {
-            &Type::Func { from, .. } => from,
-            ty => return Err(error::Error::NonFnCalled {
-                ty:   ty,
-                site: self.fun,
-            }),
-        };
-
-        let arg_t = try!(self.arg.type_in(ctx, scope));
-
-        if from_t != arg_t {
-            Err(error::Error::FnArgTypeMismatch {
-                arg:   self.arg,
-                exp_t: from_t,
-                arg_t: arg_t,
-            })
-        } else { Ok(()) }
-    }
-}
-
-impl<'ctx> Check<'ctx> for syntax::IfExpr<'ctx> {
-    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
-    -> error::Result<'ctx, ()>
-    {
-        let no = match self.no {
-            Some(no) => no,
-            None => return Err(error::Error::Unsupported {
-                msg:  "if-exprs without a matching else-clause are currently unsupported",
-                site: self.if_loc,
-            }),
-        };
-
-        try!(self.cond.check(ctx, scope));
-        try!(self.yes.check(ctx, scope));
-        try!(no.check(ctx, scope));
-
-        let cond_t = try!(self.cond.type_in(ctx, scope));
-
-        if cond_t != &Type::Bool {
-            return Err(error::Error::IfCondNotBool {
-                if_loc: self.if_loc,
-                cond_t: cond_t,
-            });
-        }
-
-        let yes_t  = try!(self.yes.type_in(ctx, scope));
-        let no_t   = try!(no.type_in(ctx, scope));
-
-        if yes_t != no_t {
-            Err(error::Error::IfElseTypeMismatch {
-                if_loc: self.if_loc,
-                yes_t:  yes_t,
-                no_t:   no_t,
-            })
-        } else { Ok(()) }
-    }
-}
-
-impl<'ctx> Check<'ctx> for syntax::IntLit<'ctx> {
-    fn check(&'ctx self, _ctx: CtxRef<'ctx>, _scope: &mut Scope<'ctx>)
-    -> error::Result<'ctx, ()>
-    {
-        Ok(())
-    }
-}
-
-impl<'ctx> Check<'ctx> for syntax::LetExpr<'ctx> {
-    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
-    -> error::Result<'ctx, ()>
-    {
-        try!(self.val.check(ctx, scope));
-
-        let val_t = try!(self.val.type_in(ctx, scope));
-
-
-        if let Some(body) = self.body {
-            let mut inner_scope = scope.child();
-
-            try!(self.pat.decl(val_t, ctx, &mut inner_scope));
-
-            ctx.scopes.insert(body, inner_scope.clone());
-
-            try!(body.check(ctx, &mut inner_scope));
-        } else {
-            try!(self.pat.decl(val_t, ctx, scope));
-        }
-
-        Ok(())
-    }
-}
-
-impl<'ctx> Check<'ctx> for syntax::Block<'ctx> {
-    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
-    -> error::Result<'ctx, ()>
-    {
-        let mut inner_scope = &mut scope.child();
-
-        for &expr in self.exprs.iter() {
-            try!(expr.check(ctx, inner_scope));
-            try!(expr.type_in(ctx, inner_scope));
-        }
-
-        Ok(())
-    }
-}
-
-impl <'ctx> Check<'ctx> for syntax::OptCons<'ctx> {
-    fn check(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
-    -> error::Result<'ctx, ()>
-    {
-        // This function is silly. I should be using two seperate types.
-
-        use source::TokenData::*;
-        match (self.kw.data, self.val) {
-            (Kw("some"), None) => Err(error::Error::InternalError {
+            _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
-                msg: scat!("`some` without associated value."),
+                msg: scat!("No semantic::Check::check pass for node type `", self, "'"),
             }),
-            (Kw("nil"), Some(..)) => Err(error::Error::InternalError {
-                loc: Some(self.loc()),
-                msg: scat!("`nil` has associated value."),
-            }),
-            (Kw("some"), Some(val)) => val.check(ctx, scope),
+        }
+    }
 
-             _ => Ok(()),
+    fn check(&'ctx self, ctx: CtxRef<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        use syntax::Node::*;
+
+        match self {
+
+            _ => return Err(error::Error::InternalError {
+                loc: Some(self.loc()),
+                msg: scat!("No semantic::Check::check pass for node type `", self, "'"),
+            }),
         }
     }
 }

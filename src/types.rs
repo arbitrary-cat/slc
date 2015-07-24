@@ -19,13 +19,18 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
 
+use error;
+use source;
 use util;
 
 use arena::TypedArena;
 use cats;
 
-#[derive(PartialEq,Eq,Hash,Clone)]
+pub type Ty<'ctx> = &'ctx Type<'ctx>;
+
+#[derive(Eq,Hash,Clone)]
 pub enum Type<'ctx> {
+    Unresolved,
     Unit,
     Int,
     Bool,
@@ -40,6 +45,22 @@ pub enum Type<'ctx> {
 }
 
 impl<'ctx> util::Tagged<'ctx> for Type<'ctx> {}
+
+impl<'ctx> PartialEq for Type<'ctx> {
+    fn eq(&self, other: &Type<'ctx>) -> bool {
+        use self::Type::*;
+
+        match (self, other) {
+            (&Int, &Int) | (&Bool, &Bool) | (_, &Unresolved) | (&Unresolved, _) => true,
+            (&Opt(a), &Opt(b)) => a == b,
+            (&Func { to: a_to, from: a_from }, &Func{ to: b_to, from: b_from }) => {
+                a_to == b_to && a_from == b_from
+            }
+            (&Tuple { elems: ref a_elems }, &Tuple { elems: ref b_elems }) => a_elems == b_elems,
+            _ => false
+        }
+    }
+}
 
 pub struct Context<'ctx> {
     mem:   TypedArena<Type<'ctx>>,
@@ -80,6 +101,25 @@ impl<'ctx> Context<'ctx> {
             }
         }
     }
+
+    pub fn resolve_pair(&'ctx self
+                       ,loc:    source::Loc<'ctx>
+                       ,hint:   Option<&'ctx Type<'ctx>>
+                       ,(a, b): (&'ctx Type<'ctx>, &'ctx Type<'ctx>))
+    -> error::Result<'ctx, (&'ctx Type<'ctx>, &'ctx Type<'ctx>)>
+    {
+        match (a, b) {
+            (&Type::Unresolved, &Type::Unresolved) => match hint {
+                Some(t) => Ok((t, t)),
+                None    => Err(error::Error::CannotResolveType {
+                    loc: loc,
+                }),
+            },
+            (l, &Type::Unresolved) => Ok((l, l)),
+            (&Type::Unresolved, r) => Ok((r, r)),
+             _                     => Ok((a, b)),
+        }
+    }
 }
 
 impl<'ctx> cats::Show for Type<'ctx> {
@@ -88,8 +128,9 @@ impl<'ctx> cats::Show for Type<'ctx> {
             &Type::Int                 => cat_len!("int"),
             &Type::Unit                => cat_len!("()"),
             &Type::Bool                => cat_len!("bool"),
-            &Type::Opt(t)              => cat_len!("?", t),
-            &Type::Func { from, to }   => cat_len!("func ", from, " -> ", to),
+            &Type::Opt(t)              => cat_len!("? ", t),
+            &Type::Unresolved          => cat_len!("<unresolved>"),
+            &Type::Func { from, to }   => cat_len!("fn ", from, ": ", to),
             &Type::Tuple { ref elems } => {
                 let mut len = cat_len!("(");
                 for (idx, &elem) in elems.iter().enumerate() {
@@ -105,8 +146,9 @@ impl<'ctx> cats::Show for Type<'ctx> {
             &Type::Int                 => cat_write!(w, "int"),
             &Type::Unit                => cat_write!(w, "()"),
             &Type::Bool                => cat_write!(w, "bool"),
-            &Type::Opt(t)              => cat_write!(w, "?", t),
-            &Type::Func { from, to }   => cat_write!(w, "func ", from, " -> ", to),
+            &Type::Opt(t)              => cat_write!(w, "? ", t),
+            &Type::Unresolved          => cat_write!(w, "<unresolved>"),
+            &Type::Func { from, to }   => cat_write!(w, "fn ", from, ": ", to),
             &Type::Tuple { ref elems } => {
                 try!(cat_write!(w, "("));
                 for (idx, &elem) in elems.iter().enumerate() {

@@ -42,8 +42,16 @@ fn fib(n: int)
     }
 }
 
+// This is the upcoming syntax.
+fn map2(f: fn int: int, (x: int, y: int))
+: (int, int)
+{
+    (f x, f y)
+}
+
 fn sqr2(x: int)
-: int {
+: int
+{
     (let xx = x*x in xx + xx) + 2
 }
 
