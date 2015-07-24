@@ -19,8 +19,8 @@ use std::io;
 
 use compiler::CtxRef;
 use error;
-use expr;
 use pattern::Pattern;
+use semantic;
 use syntax::{self, Node, GenNode};
 use types::Type;
 use util;
@@ -474,7 +474,7 @@ impl<'ctx> EmitC<'ctx> for syntax::Tuple<'ctx> {
     -> error::Result<'ctx, ()>
     {
         let c_t = {
-            let ty = try!(ctx.get_annot(self.loc(), expr::TypeAnnot, self));
+            let ty = try!(ctx.get_annot(self.loc(), semantic::TypeAnnot, self));
             try!(c.typedef(ctx, ty))
         };
 
@@ -516,7 +516,7 @@ impl<'ctx> EmitC<'ctx> for syntax::FnCall<'ctx> {
         use syntax::Tuple;
 
         let ret_t = {
-            let ty = try!(ctx.get_annot(self.loc(), expr::TypeAnnot, self));
+            let ty = try!(ctx.get_annot(self.loc(), semantic::TypeAnnot, self));
             try!(c.typedef(ctx, ty))
         };
 
@@ -544,7 +544,7 @@ impl<'ctx> EmitC<'ctx> for syntax::FnCall<'ctx> {
                     try!(elem.emit(ctx, c));
                 }
             }
-            _ => match try!(ctx.get_annot(self.loc(), expr::TypeAnnot, self)) {
+            _ => match try!(ctx.get_annot(self.loc(), semantic::TypeAnnot, self)) {
 
                 &Type::Tuple { ref elems } => {
                     for (idx, _) in elems.iter().enumerate() {
@@ -578,7 +578,7 @@ impl<'ctx> EmitC<'ctx> for syntax::IfExpr<'ctx> {
     -> error::Result<'ctx, ()>
     {
         let if_t = {
-            let ty = try!(ctx.get_annot(self.loc(), expr::TypeAnnot, self));
+            let ty = try!(ctx.get_annot(self.loc(), semantic::TypeAnnot, self));
             try!(c.typedef(ctx, ty))
         };
 
@@ -654,7 +654,7 @@ impl<'ctx> EmitC<'ctx> for syntax::LetExpr<'ctx> {
             // Declare the temporary that will hold the value of the let expression.
             let tmp = c.temp_for("let", ctx, self);
             let body_t = {
-                let ty = try!(ctx.get_annot(body.loc(), expr::TypeAnnot, body));
+                let ty = try!(ctx.get_annot(body.loc(), semantic::TypeAnnot, body));
                 try!(c.typedef(ctx, ty))
             };
 
@@ -673,7 +673,7 @@ impl<'ctx> EmitC<'ctx> for syntax::LetExpr<'ctx> {
         let field = c.temp_for("pat", ctx, self.pat);
 
         let val_t = {
-            let ty = try!(ctx.get_annot(self.val.loc(), expr::TypeAnnot, self.val));
+            let ty = try!(ctx.get_annot(self.val.loc(), semantic::TypeAnnot, self.val));
             try!(c.typedef(ctx, ty))
         };
 
@@ -721,7 +721,7 @@ impl<'ctx> EmitC<'ctx> for syntax::Block<'ctx> {
         let tmp = c.temp_for("block", ctx, self);
 
         let blk_t = {
-            let ty = try!(ctx.get_annot(self.loc(), expr::TypeAnnot, self));
+            let ty = try!(ctx.get_annot(self.loc(), semantic::TypeAnnot, self));
             try!(c.typedef(ctx, ty))
         };
 

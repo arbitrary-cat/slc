@@ -33,8 +33,6 @@ pub mod codegen;
 
 pub mod error;
 
-pub mod expr;
-
 pub mod pattern;
 
 pub mod semantic;

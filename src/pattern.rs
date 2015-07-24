@@ -18,8 +18,7 @@
 use codegen::CBuffer;
 use compiler::CtxRef;
 use error;
-use expr;
-use semantic::Scope;
+use semantic::{self, Scope};
 use syntax::{self, GenNode};
 use types::{Type, Ty};
 
@@ -78,7 +77,7 @@ impl<'ctx> Pattern<'ctx> for syntax::Ident<'ctx> {
     -> error::Result<'ctx, ()>
     {
         // Annotate the identifier with its type.
-        try!(ctx.set_annot(expr::TypeAnnot, self, ty));
+        try!(ctx.set_annot(semantic::TypeAnnot, self, ty));
 
         Ok(if self.text() != "_" { try!(scope.decl(self, ty)) })
     }
@@ -89,7 +88,7 @@ impl<'ctx> Pattern<'ctx> for syntax::Ident<'ctx> {
         if self.text() == "_" { return Ok(()) }
 
         let c_t = {
-            let ty = try!(ctx.get_annot(self.loc(), expr::TypeAnnot, self));
+            let ty = try!(ctx.get_annot(self.loc(), semantic::TypeAnnot, self));
             try!(c.typedef(ctx, ty))
         };
 

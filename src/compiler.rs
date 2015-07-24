@@ -16,7 +16,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use error;
-use expr;
 use semantic;
 use source;
 use syntax;
@@ -26,10 +25,10 @@ use util;
 use cats;
 
 pub struct Context<'ctx> {
-    pub file:    &'ctx source::File,
-    pub syntax:  syntax::Context<'ctx>,
-    pub types:   types::Context<'ctx>,
-    pub expr:    expr::Context<'ctx>,
+    pub file:     &'ctx source::File,
+    pub syntax:   syntax::Context<'ctx>,
+    pub types:    types::Context<'ctx>,
+    pub semantic: semantic::Context<'ctx>,
 
     pub scopes:  semantic::ScopeMap<'ctx>,
     pub strings: util::StrArena,
@@ -37,7 +36,7 @@ pub struct Context<'ctx> {
 
 /// An annotation on a compiler entity.
 ///
-/// See `expr::TypeAnnot` for an example implementation of this trait.
+/// See `semantic::TypeAnnot` for an example implementation of this trait.
 pub trait Annotation<'ctx>: cats::Show
 {
     type Data: Clone;
@@ -58,9 +57,9 @@ impl<'ctx> Context<'ctx> {
             scopes:  semantic::ScopeMap::new(),
             strings: util::StrArena::new(),
 
-            syntax:  syntax::Context::new(),
-            types:   types::Context::new(),
-            expr:    expr::Context::new(),
+            syntax:   syntax::Context::new(),
+            types:    types::Context::new(),
+            semantic: semantic::Context::new(),
         }
     }
 

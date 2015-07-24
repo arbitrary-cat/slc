@@ -17,11 +17,13 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::io;
 use std::rc::Rc;
 
-use compiler::CtxRef;
+use cats;
+
+use compiler::{self, CtxRef};
 use error::{self, Error};
-use pattern::Pattern;
 use syntax::{self, Ident, GenNode, No};
 use types::{Ty, Type};
 use util;
@@ -165,5 +167,45 @@ impl<'ctx> Check<'ctx> for No<'ctx> {
                 msg: scat!("No semantic::Check::check pass for node type `", self, "'"),
             }),
         }
+    }
+}
+
+/// Compiler context for processing expressions.
+pub struct Context<'ctx> {
+    ty_map: util::TagMap<'ctx, Ty<'ctx>>,
+}
+
+impl<'ctx> Context<'ctx> {
+    pub fn new() -> Context<'ctx> {
+        Context {
+            ty_map: util::TagMap::new(),
+        }
+    }
+}
+
+/// TypeAnnot is the tag for type-annotations on expression nodes.
+pub struct TypeAnnot;
+
+impl cats::Show for TypeAnnot {
+    fn len(&self)
+    -> usize
+    {
+        cat_len!("semantic::TypeAnnot")
+    }
+
+    fn write<W: io::Write>(&self, w: &mut W)
+    -> io::Result<usize>
+    {
+        cat_write!(w, "semantic::TypeAnnot")
+    }
+}
+
+impl<'ctx> compiler::Annotation<'ctx> for TypeAnnot {
+    type Data = Ty<'ctx>;
+
+    fn get_map(&self, ctx: CtxRef<'ctx>)
+    -> &'ctx util::TagMap<'ctx, Ty<'ctx>>
+    {
+        &ctx.semantic.ty_map
     }
 }
