@@ -136,7 +136,7 @@ impl<'ctx> Check<'ctx> for No<'ctx> {
 
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
-                msg: scat!("No semantic::Check::check pass for node type `", self, "'"),
+                msg: scat!("No semantic::Check::decl pass for node type `", self, "'"),
             }),
         }
     }
@@ -150,7 +150,7 @@ impl<'ctx> Check<'ctx> for No<'ctx> {
 
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
-                msg: scat!("No semantic::Check::check pass for node type `", self, "'"),
+                msg: scat!("No semantic::Check::resolve pass for node type `", self, "'"),
             }),
         }
     }
