@@ -56,16 +56,16 @@ impl<'ctx> Scope<'ctx> {
         }
     }
 
-    pub fn decl(&mut self, id: &'ctx Ident<'ctx>, ty: Ty<'ctx>)
+    pub fn decl<I>(&mut self, id: &'ctx I, ty: Ty<'ctx>)
     -> error::Result<'ctx, ()>
+    where I: AsRef<Ident<'ctx>>,
     {
-
         let mut borrow = self.inner.borrow_mut();
 
-        if let Some(&Symbol { decl, .. }) = borrow.table.get(id.text()) {
-            Err(Error::AlreadyDeclared { decl: decl, ident: id })
+        if let Some(&Symbol { decl, .. }) = borrow.table.get(id.as_ref().text()) {
+            Err(Error::AlreadyDeclared { decl: decl, ident: id.as_ref() })
         } else {
-            borrow.table.insert(id.text(), Symbol { decl: id, ty: ty });
+            borrow.table.insert(id.as_ref().text(), Symbol { decl: id.as_ref(), ty: ty });
             Ok(())
         }
     }
@@ -84,16 +84,17 @@ impl<'ctx> Scope<'ctx> {
     pub fn parent(&self) -> Option<Scope<'ctx>> { self.inner.borrow().parent.clone() }
 
     /// Lookup a symbol based on the name of a given identifier.
-    pub fn lookup(&self, id: &'ctx Ident<'ctx>)
+    pub fn lookup<I>(&self, id: &'ctx I)
     -> error::Result<'ctx, Symbol<'ctx>>
+    where I: AsRef<Ident<'ctx>>,
     {
         let r = self.inner.borrow();
-        if let Some(sym) = r.table.get(id.text()) {
+        if let Some(sym) = r.table.get(id.as_ref().text()) {
             Ok(sym.clone())
         } else if let Some(p) = r.parent.as_ref() {
             p.lookup(id)
         } else {
-            Err(Error::NotDeclared { ident: id })
+            Err(Error::NotDeclared { ident: id.as_ref() })
         }
     }
 }
