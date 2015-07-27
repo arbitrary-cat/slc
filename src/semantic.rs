@@ -15,6 +15,8 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#![allow(unused_variables)]
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io;
@@ -25,7 +27,7 @@ use cats;
 use compiler::{self, CtxRef};
 use error::{self, Error};
 use syntax::{self, Ident, GenNode, No};
-use types::{Ty, Type};
+use types::Ty;
 use util;
 
 #[derive(Clone)]
@@ -130,6 +132,7 @@ impl<'ctx> Check<'ctx> for No<'ctx> {
     fn decl(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     {
+        #[allow(unused_imports)] // Until there are some cases here...
         use syntax::Node::*;
 
         match self {
@@ -144,6 +147,7 @@ impl<'ctx> Check<'ctx> for No<'ctx> {
     fn resolve(&'ctx self, hint: Option<Ty<'ctx>>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     {
+        #[allow(unused_imports)] // Until there are some cases here...
         use syntax::Node::*;
 
         match self {
@@ -158,6 +162,7 @@ impl<'ctx> Check<'ctx> for No<'ctx> {
     fn check(&'ctx self, ctx: CtxRef<'ctx>)
     -> error::Result<'ctx, ()>
     {
+        #[allow(unused_imports)] // Until there are some cases here...
         use syntax::Node::*;
 
         match self {

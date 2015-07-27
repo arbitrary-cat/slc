@@ -22,10 +22,9 @@ use std::env;
 use std::path::PathBuf;
 
 use sl::compiler;
-use sl::codegen::{self, EmitC};
 use sl::source;
 use sl::syntax;
-use sl::semantic::{self, Check};
+use sl::semantic;
 
 macro_rules! main_try {
     ($x:expr) => {
@@ -40,6 +39,8 @@ macro_rules! main_try {
 }
 
 pub fn main() {
+    #![allow(unused_variables)]
+
     let args: Vec<String> = env::args().collect();
 
     if args.len() != 2 {
@@ -55,16 +56,12 @@ pub fn main() {
 
     let tu = main_try!(syntax::parse(&ctx));
 
-    let mut global = semantic::Scope::new();
+    let global = semantic::Scope::new();
     
     // main_try!(tu.check(&ctx, &mut global));
-
-    let mut cbuf = codegen::CBuffer::new();
 
     // main_try!(tu.emit(&ctx, &mut cbuf));
 
     path.set_extension("c");
-    let mut c_file = fs::File::create(&path).unwrap();
-
-    cbuf.write(&mut c_file).ok();
+    let c_file = fs::File::create(&path).unwrap();
 }
