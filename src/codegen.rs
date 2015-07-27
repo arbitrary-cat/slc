@@ -344,6 +344,9 @@ impl<'ctx> syntax::FnDecl<'ctx> {
     fn print_sig(&'ctx self, sig_loc: SigLoc, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
     -> error::Result<'ctx, ()>
     {
+
+        /*// OLD IMPLEMENTATION:
+
         let mut comma = None;
 
         let ret_t: &'ctx str = try!(c.typedef(ctx, self.to));
@@ -379,6 +382,8 @@ impl<'ctx> syntax::FnDecl<'ctx> {
 
         fcat!(sig_loc.get_buffer(c), ")").ok();
 
+        */
+
         Ok(())
     }
 }
@@ -387,6 +392,8 @@ impl<'ctx> EmitC<'ctx> for syntax::FnDecl<'ctx> {
     fn emit(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
     -> error::Result<'ctx, ()>
     {
+        /*// OLD IMPLEMENTATION:
+
         try!(self.print_sig(SigLoc::Proto, ctx, c));
         fcatln!(c.fn_protos_txt, ";\n").ok();
 
@@ -429,6 +436,8 @@ impl<'ctx> EmitC<'ctx> for syntax::FnDecl<'ctx> {
 
         c.dec_indent();
         fcatln!(c.fn_impls_txt, ";\n", c.indent, "}\n").ok();
+
+        */
 
         Ok(())
     }

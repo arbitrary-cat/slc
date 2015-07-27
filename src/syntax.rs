@@ -24,15 +24,16 @@ use std::mem;
 
 use cats;
 
-use compiler;
+use compiler::CtxRef;
 use error;
 use source;
 use source::TokenData::*;
-use types::Type;
+use types::{Ty, Type};
 use util;
 
 use arena::TypedArena;
 
+pub type No<'ctx> = &'ctx Node<'ctx>;
 
 /// An identifier.
 pub struct Ident<'ctx> {
@@ -148,7 +149,7 @@ pub struct SomeCons<'ctx> {
     pub kw: source::Token<'ctx>,
 
     /// The value being passed to `some`, a FactorExpr.
-    pub val: &'ctx Node<'ctx>,
+    pub val: No<'ctx>,
 }
 
 impl<'ctx> util::Tagged<'ctx> for SomeCons<'ctx> {}
@@ -224,7 +225,7 @@ pub struct TranslationUnit<'ctx> {
     pub start: source::Loc<'ctx>,
 
     /// All functions declared in this file, in the order that they were declared.
-    pub fn_decls: Vec<&'ctx Node<'ctx>>,
+    pub fn_decls: Vec<No<'ctx>>,
 }
 
 impl<'ctx> util::Tagged<'ctx> for TranslationUnit<'ctx> {}
@@ -256,61 +257,19 @@ impl<'ctx> GenNode<'ctx> for TranslationUnit<'ctx> {
     }
 }
 
-/// A list of variables being declared by name.
-pub struct VarDecl<'ctx> {
-    /// Identifiers which name the variables being declared.
-    ///
-    /// # Invariants
-    ///
-    /// `self.names.len() != 0`
-    pub names: Vec<&'ctx Node<'ctx>>,
-
-    /// The type of the variables being declared.
-    pub ty: &'ctx Type<'ctx>,
-}
-
-impl<'ctx> util::Tagged<'ctx> for VarDecl<'ctx> {}
-
-impl<'ctx> AsRef<VarDecl<'ctx>> for Node<'ctx> {
-    fn as_ref(&self) -> &VarDecl<'ctx> {
-        match self {
-            &Node::VarDecl(ref var_decl) => var_decl,
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl<'ctx> Into<Node<'ctx>> for VarDecl<'ctx> {
-    fn into(self) -> Node<'ctx> { Node::VarDecl(self) }
-}
-
-impl<'ctx> GenNode<'ctx> for VarDecl<'ctx> {
-    fn loc(&self)
-    -> source::Loc<'ctx>
-    {
-        self.names.first().unwrap().loc()
-    }
-
-    fn text(&self)
-    -> &'ctx str
-    {
-        "<var decl>"
-    }
-}
-
 /// A function declaration.
 pub struct FnDecl<'ctx> {
     /// The name of this function, at the location where it was declared.
-    pub name: &'ctx Node<'ctx>,
+    pub name: No<'ctx>,
 
-    /// The VarDecls which declare the arguments to this function.
-    pub args: Vec<&'ctx Node<'ctx>>,
+    /// The TypedPattern which declares this functions arguments.
+    pub args: No<'ctx>,
 
     /// Type that the function outputs.
-    pub to: &'ctx Type<'ctx>,
+    pub to: Ty<'ctx>,
 
     /// The body of this function (an expression).
-    pub body: &'ctx Node<'ctx>,
+    pub body: No<'ctx>,
 }
 
 impl<'ctx> util::Tagged<'ctx> for FnDecl<'ctx> {}
@@ -345,13 +304,13 @@ impl<'ctx> GenNode<'ctx> for FnDecl<'ctx> {
 
 pub struct LogicOp<'ctx> {
     /// The expression which will be tested first. Must have type `Bool`.
-    pub first:  &'ctx Node<'ctx>,
+    pub first:  No<'ctx>,
 
     /// The operator, either `&&` or `||`
-    pub op:     &'ctx Node<'ctx>,
+    pub op:     No<'ctx>,
 
     /// The expression which will be tested second. Must have type `Bool`.
-    pub second: &'ctx Node<'ctx>,
+    pub second: No<'ctx>,
 }
 
 impl<'ctx> util::Tagged<'ctx> for LogicOp<'ctx> {}
@@ -387,13 +346,13 @@ impl<'ctx> GenNode<'ctx> for LogicOp<'ctx> {
 /// A binary expression.
 pub struct BinOp<'ctx> {
     /// The left-hand side of the expression.
-    pub lhs: &'ctx Node<'ctx>,
+    pub lhs: No<'ctx>,
 
     /// The operator.
-    pub op:  &'ctx Node<'ctx>,
+    pub op:  No<'ctx>,
 
     /// The right-hand side of the expression.
-    pub rhs: &'ctx Node<'ctx>,
+    pub rhs: No<'ctx>,
 }
 
 impl<'ctx> util::Tagged<'ctx> for BinOp<'ctx> {}
@@ -429,10 +388,10 @@ impl<'ctx> GenNode<'ctx> for BinOp<'ctx> {
 /// A function call.
 pub struct FnCall<'ctx> {
     /// An expression which evaluates to a function.
-    pub fun: &'ctx Node<'ctx>,
+    pub fun: No<'ctx>,
 
     /// The argument to this function.
-    pub arg: &'ctx Node<'ctx>,
+    pub arg: No<'ctx>,
 }
 
 impl<'ctx> util::Tagged<'ctx> for FnCall<'ctx> {}
@@ -471,13 +430,13 @@ pub struct IfExpr<'ctx> {
     pub if_loc: source::Loc<'ctx>,
 
     /// The condition, this must be an expression of boolean type.
-    pub cond: &'ctx Node<'ctx>,
+    pub cond: No<'ctx>,
 
     /// The expression which will be evaluated if the condition is true.
-    pub yes: &'ctx Node<'ctx>,
+    pub yes: No<'ctx>,
 
     /// The expression which will be evaluated if the condition is false.
-    pub no: Option<&'ctx Node<'ctx>>,
+    pub no: Option<No<'ctx>>,
 }
 
 impl<'ctx> util::Tagged<'ctx> for IfExpr<'ctx> {}
@@ -516,7 +475,7 @@ pub struct Tuple<'ctx> {
     pub open_paren: source::Loc<'ctx>,
 
     /// The elements of the tuple (expressions).
-    pub elems: Vec<&'ctx Node<'ctx>>,
+    pub elems: Vec<No<'ctx>>,
 }
 
 impl<'ctx> util::Tagged<'ctx> for Tuple<'ctx> {}
@@ -555,18 +514,18 @@ pub struct LetExpr<'ctx> {
     pub let_loc: source::Loc<'ctx>,
 
     /// The pattern being assigned to.
-    pub pat: &'ctx Node<'ctx>,
+    pub pat: No<'ctx>,
 
     /// A let expression may be accompanied a type annotation, which is used to aid inference and
     /// ensure agreement between the compiler and programmer about the type of the expression.
-    pub ty:  Option<&'ctx Type<'ctx>>,
+    pub ty:  Option<Ty<'ctx>>,
 
     /// The value being destructured into the pattern.
-    pub val: &'ctx Node<'ctx>,
+    pub val: No<'ctx>,
 
     /// The expression to be evaluated with this binding. If this field is `None` then the bindings
     /// are declared in the containing scope.
-    pub body: Option<&'ctx Node<'ctx>>,
+    pub body: Option<No<'ctx>>,
 }
 
 impl<'ctx> util::Tagged<'ctx> for LetExpr<'ctx> {}
@@ -599,12 +558,63 @@ impl<'ctx> GenNode<'ctx> for LetExpr<'ctx> {
 }
 
 
+// This type is used in the construction of a TypedPattern. TupleStreaks are used when building
+// typed tuple patterns. See the grammar/parser code.
+struct TupleStreak<'ctx> {
+    // Patterns for each element of the tuple.
+    //
+    // # Invariants
+    //
+    // `self.pats.len() != 0`
+    pats: Vec<No<'ctx>>,
+
+    // The type of all of the given pattern.
+    ty: Ty<'ctx>,
+}
+
+
+/// A pattern with a type annotation.
+pub struct TypedPattern<'ctx> {
+    pub ty:  Ty<'ctx>,
+    pub pat: No<'ctx>,
+}
+
+impl<'ctx> util::Tagged<'ctx> for TypedPattern<'ctx> {}
+
+impl<'ctx> AsRef<TypedPattern<'ctx>> for Node<'ctx> {
+    fn as_ref(&self) -> &TypedPattern<'ctx> {
+        match self {
+            &Node::TypedPattern(ref typed_pattern) => typed_pattern,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'ctx> Into<Node<'ctx>> for TypedPattern<'ctx> {
+    fn into(self) -> Node<'ctx> { Node::TypedPattern(self) }
+}
+
+impl<'ctx> GenNode<'ctx> for TypedPattern<'ctx> {
+    fn loc(&self)
+    -> source::Loc<'ctx>
+    {
+        self.pat.loc()
+    }
+
+    fn text(&self)
+    -> &'ctx str
+    {
+        "<typed pattern>"
+    }
+}
+
+
 /// A pattern to destructure a tuple.
 pub struct TuplePattern<'ctx> {
     pub open_paren: source::Loc<'ctx>,
 
     /// Patterns for each element of the tuple.
-    pub elems:  Vec<&'ctx Node<'ctx>>,
+    pub elems:  Vec<No<'ctx>>,
 }
 
 impl<'ctx> util::Tagged<'ctx> for TuplePattern<'ctx> {}
@@ -642,7 +652,7 @@ impl<'ctx> GenNode<'ctx> for TuplePattern<'ctx> {
 pub struct Block<'ctx> {
     pub open_curly: source::Loc<'ctx>,
 
-    pub exprs: Vec<&'ctx Node<'ctx>>,
+    pub exprs: Vec<No<'ctx>>,
 
     /// This bool will be true of the `Block` has unit type, meaning that it will only be evaluated
     /// for its side-effects.
@@ -688,14 +698,14 @@ impl<'ctx> Context<'ctx> {
         Context { mem: TypedArena::new() }
     }
 
-    pub fn mk_node(&'ctx self, n: Node<'ctx>) -> &'ctx Node<'ctx> {
+    pub fn mk_node(&'ctx self, n: Node<'ctx>) -> No<'ctx> {
         self.mem.alloc(n)
     }
 }
 
 
 struct Parser<'ctx> {
-    ctx:     &'ctx compiler::Context<'ctx>,
+    ctx:     CtxRef<'ctx>,
     next:    Option<source::Token<'ctx>>,
     scanner: source::Scanner<'ctx>,
 }
@@ -754,38 +764,38 @@ macro_rules! p_delim {
 
 impl<'ctx> Parser<'ctx> {
     fn mk_node<N>(&self, n: N)
-    -> &'ctx Node<'ctx>
+    -> No<'ctx>
     where N: Into<Node<'ctx>>
     {
         self.ctx.syntax.mk_node(n.into())
     }
 
     fn mk_type(&self, t: Type<'ctx>)
-    -> &'ctx Type<'ctx>
+    -> Ty<'ctx>
     {
         self.ctx.types.mk_type(t)
     }
 
     fn int_lit(&self, tok: source::Token<'ctx>)
-    -> &'ctx Node<'ctx>
+    -> No<'ctx>
     {
         self.mk_node(IntLit { tok: tok })
     }
 
     fn ident(&self, tok: source::Token<'ctx>)
-    -> &'ctx Node<'ctx>
+    -> No<'ctx>
     {
         self.mk_node(Ident { tok: tok })
     }
 
     fn operator(&self, tok: source::Token<'ctx>)
-    -> &'ctx Node<'ctx>
+    -> No<'ctx>
     {
         self.mk_node(Operator { tok: tok })
     }
 
     // TranslationUnit = { FnDecl } .
-    fn parse_translation_unit<'x>(&'x mut self) -> error::Result<'ctx, &'ctx Node<'ctx>>
+    fn parse_translation_unit<'x>(&'x mut self) -> error::Result<'ctx, No<'ctx>>
     where 'ctx: 'x {
 
         let mut fn_decls = Vec::new();
@@ -799,9 +809,9 @@ impl<'ctx> Parser<'ctx> {
         }))
     }
 
-    // FnDecl = 'fn' Ident '(' ArgList ')' [ ':' Type ] Block
+    // FnDecl = 'fn' Ident TypedPattern [ '->' Type ] Block
     fn parse_fn_decl(&mut self)
-    -> error::Result<'ctx, &'ctx Node<'ctx>>
+    -> error::Result<'ctx, No<'ctx>>
     {
         p_match!(self, "`fn'", Kw("fn"));
         let name = {
@@ -809,19 +819,15 @@ impl<'ctx> Parser<'ctx> {
             self.ident(tok)
         };
 
-        p_match!(self, "`('", Sym("("));
-        let args = try!(self.parse_arg_list());
-        p_match!(self,
-            if args.len() > 0 { "`,' or `)'" } else { "identifier or `)'" },
-            Sym(")"));
+        let args = try!(self.parse_typed_pattern());
 
-        let to = if p_delim!(self, Sym(":")) {
+        let to = if p_delim!(self, Sym("->")) {
             try!(self.parse_type())
         } else {
             self.ctx.types.unit()
         };
 
-        let curly = p_match!(self, "`{'", Sym("{"));
+        let curly = p_match!(self, "`->' or `{'", Sym("{"));
         let body  = try!(self.parse_block(curly.loc));
 
         let fn_decl = self.mk_node(FnDecl {
@@ -834,55 +840,14 @@ impl<'ctx> Parser<'ctx> {
         Ok(fn_decl)
     }
 
-    // ArgList = { VarDecl ',' } [ VarDecl ]
-    fn parse_arg_list(&mut self)
-    -> error::Result<'ctx, Vec<&'ctx Node<'ctx>>>
-    {
-        let mut args   = Vec::new();
-        p_peek!(tok in self {
-            // VarDecl
-            Id(..) => {
-                while !p_delim!(self, Sym(")")) {
-                    args.push(try!(self.parse_var_decl()));
-                    if !p_delim!(self, Sym(",")) { break }
-                }
-            }
-        } else { () });
-
-        Ok(args)
-    }
-
-    fn parse_var_decl( &mut self)
-    -> error::Result<'ctx, &'ctx Node<'ctx>>
-    {
-        let mut names = Vec::new();
-
-        let var_id = p_match!(self, "identifier", Id(..));
-        names.push(self.ident(var_id));
-
-        while p_delim!(self, Sym(",")) {
-            let var_id = p_match!(self, "identifier", Id(..));
-            names.push(self.ident(var_id));
-        }
-
-        p_match!(self, "`:'", Sym(":"));
-
-        let ty = try!(self.parse_type());
-
-        Ok(self.mk_node(VarDecl {
-            names: names,
-            ty:    ty,
-        }))
-    }
-
     // Type = 'int'
     //      | 'bool'
     //      | '(' { Type ',' } [ Type ] ')'
-    //      | 'fn' Type ':' Type
+    //      | 'fn' Type '->' Type
     //      | '?' Type
     //      .
     fn parse_type<'x>(&'x mut self)
-    -> error::Result<'ctx, &'ctx Type<'ctx>>
+    -> error::Result<'ctx, Ty<'ctx>>
     where 'ctx: 'x
     {
         Ok( p_try!( tok in self {
@@ -903,7 +868,7 @@ impl<'ctx> Parser<'ctx> {
 
             Kw("fn") => {
                 let from = try!(self.parse_type());
-                p_match!(self, "`:'", Sym(":"));
+                p_match!(self, "`->'", Sym("->"));
                 let to = try!(self.parse_type());
 
                 self.mk_type(Type::Func {
@@ -928,13 +893,13 @@ impl<'ctx> Parser<'ctx> {
 
     // Expr = LogicExpr .
     fn parse_expr<'x>(&'x mut self)
-    -> error::Result<'ctx, &'ctx Node<'ctx>>
+    -> error::Result<'ctx, No<'ctx>>
     where 'ctx: 'x {
         self.parse_logic_expr()
     }
 
     // LogicExpr = CmpExpr [ ( '&&' | '||' ) LogicExpr ] .
-    fn parse_logic_expr<'x>(&'x mut self) -> error::Result<'ctx, &'ctx Node<'ctx>>
+    fn parse_logic_expr<'x>(&'x mut self) -> error::Result<'ctx, No<'ctx>>
     where 'ctx: 'x
     {
         // CmpExpr
@@ -961,7 +926,7 @@ impl<'ctx> Parser<'ctx> {
     }
 
     // CmpExpr = AddExpr [ ( '<' | '>' | '<=' | '>=' | '== ' | '!=' ) CmpExpr ] .
-    fn parse_cmp_expr<'x>(&'x mut self) -> error::Result<'ctx, &'ctx Node<'ctx>>
+    fn parse_cmp_expr<'x>(&'x mut self) -> error::Result<'ctx, No<'ctx>>
     where 'ctx: 'x
     {
         // AddExpr
@@ -988,7 +953,7 @@ impl<'ctx> Parser<'ctx> {
     }
 
     // AddExpr = MulExpr [ ( '+' | '-' ) AddExpr ] .
-    fn parse_add_expr<'x>(&'x mut self) -> error::Result<'ctx, &'ctx Node<'ctx>>
+    fn parse_add_expr<'x>(&'x mut self) -> error::Result<'ctx, No<'ctx>>
     where 'ctx: 'x {
         // MulExpr
         let lhs = try!(self.parse_mul_expr());
@@ -1014,7 +979,7 @@ impl<'ctx> Parser<'ctx> {
     }
 
     // MulExpr = FnExpr [ ( '*' | '/' | '%' ) MulExpr ] .
-    fn parse_mul_expr<'x>(&'x mut self) -> error::Result<'ctx, &'ctx Node<'ctx>>
+    fn parse_mul_expr<'x>(&'x mut self) -> error::Result<'ctx, No<'ctx>>
     where 'ctx: 'x {
         // FnExpr
         let lhs = try!(self.parse_fn_expr());
@@ -1041,7 +1006,7 @@ impl<'ctx> Parser<'ctx> {
 
     // FnExpr = Factor [ FnExpr ] .
     fn parse_fn_expr(&mut self)
-    -> error::Result<'ctx, &'ctx Node<'ctx>>
+    -> error::Result<'ctx, No<'ctx>>
     {
 
         let fun = try!(self.parse_factor_expr());
@@ -1066,7 +1031,7 @@ impl<'ctx> Parser<'ctx> {
     //        | Ident
     //        | IntLit
     //        .
-    fn parse_factor_expr<'x>(&'x mut self) -> error::Result<'ctx, &'ctx Node<'ctx>>
+    fn parse_factor_expr<'x>(&'x mut self) -> error::Result<'ctx, No<'ctx>>
     where 'ctx: 'x {
         Ok(p_try!(tok in self {
 
@@ -1112,7 +1077,7 @@ impl<'ctx> Parser<'ctx> {
     }
 
     fn parse_block(&mut self, loc: source::Loc<'ctx>)
-    -> error::Result<'ctx, &'ctx Node<'ctx>>
+    -> error::Result<'ctx, No<'ctx>>
     {
         let mut exprs = Vec::new();
         let mut unit  = true;
@@ -1137,7 +1102,7 @@ impl<'ctx> Parser<'ctx> {
     //
     // LetExpr = 'let' Pattern '=' Expr 'in' Expr
     fn parse_let_expr(&mut self, loc: source::Loc<'ctx>)
-    -> error::Result<'ctx, &'ctx Node<'ctx>>
+    -> error::Result<'ctx, No<'ctx>>
     {
         let pat = try!(self.parse_pattern());
         p_match!(self, "`='", Sym("="));
@@ -1158,11 +1123,88 @@ impl<'ctx> Parser<'ctx> {
         }))
     }
 
+    // # Note that the TypedPattern for a single identifier looks like '(' Ident ':' Type ')'
+    //
+    // TypedPattern = '(' { TupleStreak ',' } [ TupleStreak ] ')' .
+    fn parse_typed_pattern(&mut self)
+    -> error::Result<'ctx, No<'ctx>>
+    {
+        let open_paren = p_match!(self, "`('", Sym("("));
+
+        self.finish_typed_pattern(open_paren.loc, Vec::new())
+    }
+
+    // Finish parsing a typed pattern after the `(' and 0 or more TupleStreaks have been consumed.
+    // Any previously consumed streaks should be given as input.
+    fn finish_typed_pattern(&mut self, loc: source::Loc<'ctx>, mut streaks: Vec<TupleStreak<'ctx>>)
+    -> error::Result<'ctx, No<'ctx>>
+    {
+        while !p_delim!(self, Sym(")")) {
+            streaks.push(try!(self.parse_tuple_streak()));
+            if !p_delim!(self, Sym(",")) {
+                p_match!(self, "`,' or `)'", Sym(")"));
+                break;
+            }
+        }
+
+        let mut elems   = Vec::new();
+        let mut elems_t = Vec::new();
+
+        for streak in &streaks {
+            for &pat in &streak.pats {
+                elems.push(pat);
+                elems_t.push(streak.ty);
+            }
+        }
+
+        let tuple   = self.mk_node(TuplePattern {
+            open_paren: loc,
+            elems:      elems,
+        });
+        let tuple_t = self.mk_type(Type::Tuple { elems: elems_t });
+
+        Ok(self.mk_node(TypedPattern {
+            pat: tuple,
+            ty:  tuple_t,
+        }))
+    }
+
+    // TupleStreak = { Pattern ',' } Pattern ':' Type
+    fn parse_tuple_streak(&mut self)
+    -> error::Result<'ctx, TupleStreak<'ctx>>
+    {
+        let first = try!(self.parse_pattern());
+
+        let mut pats = vec![first];
+
+        if let &Node::TypedPattern(ref tp) = first {
+            return Ok(TupleStreak {
+                pats: pats,
+                ty:   tp.ty,
+            })
+        }
+
+
+        while p_delim!(self, Sym(",")) {
+            pats.push(try!(self.parse_pattern()));
+        }
+
+        p_match!(self, "`,' or `:'", Sym(":"));
+
+        Ok(TupleStreak {
+            pats: pats,
+            ty:   try!(self.parse_type()),
+        })
+    }
+
     // Pattern = '(' { Pattern ',' } [ Pattern ] ')'
     //         | Ident
+    //         | TypedPattern
     //         .
+    //
+    // FIXME: TypedPattern and Pattern both can start with '('
     fn parse_pattern(&mut self)
-    -> error::Result<'ctx, &'ctx Node<'ctx>>
+    -> error::Result<'ctx, No<'ctx>>
     {
         Ok(p_try!(tok in self {
             Sym("(") => {
@@ -1170,15 +1212,64 @@ impl<'ctx> Parser<'ctx> {
 
                 while !p_delim!(self, Sym(")")) {
                     pat_ls.push(try!(self.parse_pattern()));
-                    if !p_delim!(self, Sym(",")) { break }
+                    if !p_delim!(self, Sym(",")) {
+
+
+                        // Here's where we resolve the ambiguity, if there's a ':' after a list of
+                        // patterns we hand off to the TypedPattern parser code.
+                        p_try!(last in self {
+                            Sym(")") => if pat_ls.is_empty() {
+                                return Ok( self.mk_node(TuplePattern {
+                                    open_paren: tok.loc,
+                                    elems:      Vec::new(),
+                                }));
+                            } else { break },
+
+                            Sym(":") => {
+                                let streak = vec![
+                                    TupleStreak {
+                                        pats: pat_ls,
+                                        ty:   try!(self.parse_type()),
+                                    }
+                                ];
+
+                               
+
+                                return self.finish_typed_pattern(tok.loc, streak);
+                            }
+
+                        } else {
+                            return expecting("')' or ':'", Some(tok));
+                        });
+                    }
                 }
 
-                p_match!(self, "pattern or `)'", Sym(")"));
+                let elems_t: Vec<Ty<'ctx>> = pat_ls.iter()
+                                                   .filter_map(
+                                                       |&x| if let &Node::TypedPattern(ref tp) = x {
+                                                           Some(tp.ty)
+                                                       } else {
+                                                           None
+                                                       })
+                                                   .collect();
 
-                self.mk_node( TuplePattern {
-                    open_paren: tok.loc,
-                    elems:      pat_ls,
-                })
+
+                if elems_t.len() == pat_ls.len() {
+                    // A TuplePattern where all the children are typed is a TypedPattern.
+                    self.mk_node(TypedPattern {
+                        pat: self.mk_node(TuplePattern {
+                            open_paren: tok.loc,
+                            elems:      pat_ls,
+                        }),
+
+                        ty: self.mk_type(Type::Tuple { elems: elems_t }),
+                    })
+                } else {
+                    self.mk_node(TuplePattern {
+                        open_paren: tok.loc,
+                        elems:      pat_ls,
+                    })
+                }
             },
 
             Id(..) => self.ident(tok)
@@ -1195,7 +1286,7 @@ impl<'ctx> Parser<'ctx> {
     //          | 'else' '{' Expr '}'
     //          .
     fn parse_if_expr(&mut self, loc: source::Loc<'ctx>)
-    -> error::Result<'ctx, &'ctx Node<'ctx>>
+    -> error::Result<'ctx, No<'ctx>>
     {
         let cond = try!(self.parse_expr());
 
@@ -1220,7 +1311,7 @@ impl<'ctx> Parser<'ctx> {
     }
 
     // ExprList = { Expr ',' } [ Expr ]
-    fn parse_expr_list<'x>(&'x mut self) -> error::Result<'ctx, Vec<&'ctx Node<'ctx>>>
+    fn parse_expr_list<'x>(&'x mut self) -> error::Result<'ctx, Vec<No<'ctx>>>
     where 'ctx: 'x {
         let mut expr_ls = Vec::new();
 
@@ -1235,7 +1326,7 @@ impl<'ctx> Parser<'ctx> {
     }
 }
 
-pub fn parse<'ctx>(ctx: &'ctx compiler::Context<'ctx>) -> error::Result<'ctx, &'ctx Node<'ctx>> {
+pub fn parse<'ctx>(ctx: CtxRef<'ctx>) -> error::Result<'ctx, No<'ctx>> {
 
     let mut scanner = ctx.file.scan();
     let mut parser  = Parser {
@@ -1258,8 +1349,6 @@ where String: From<S>
     }
 }
 
-pub type No<'ctx> = &'ctx Node<'ctx>;
-
 /// A node in the syntax tree. This enum wraps each possible node type to allow for a sort of
 /// reflection. The `Node` type provides all caching and annotation methods on top of the individual
 /// methods, including ICE generation if the wrong operation is called on the wrong type.
@@ -1271,7 +1360,6 @@ pub enum Node<'ctx> {
     Operator(Operator<'ctx>),
     TranslationUnit(TranslationUnit<'ctx>),
     FnDecl(FnDecl<'ctx>),
-    VarDecl(VarDecl<'ctx>),
     LogicOp(LogicOp<'ctx>),
     BinOp(BinOp<'ctx>),
     FnCall(FnCall<'ctx>),
@@ -1279,6 +1367,7 @@ pub enum Node<'ctx> {
     LetExpr(LetExpr<'ctx>),
     Tuple(Tuple<'ctx>),
     TuplePattern(TuplePattern<'ctx>),
+    TypedPattern(TypedPattern<'ctx>),
     Block(Block<'ctx>),
 }
 
@@ -1302,7 +1391,6 @@ impl<'ctx> GenNode<'ctx> for Node<'ctx> {
             &Operator(ref n)        => n.loc(),
             &TranslationUnit(ref n) => n.loc(),
             &FnDecl(ref n)          => n.loc(),
-            &VarDecl(ref n)         => n.loc(),
             &LogicOp(ref n)         => n.loc(),
             &BinOp(ref n)           => n.loc(),
             &FnCall(ref n)          => n.loc(),
@@ -1310,6 +1398,7 @@ impl<'ctx> GenNode<'ctx> for Node<'ctx> {
             &LetExpr(ref n)         => n.loc(),
             &Tuple(ref n)           => n.loc(),
             &TuplePattern(ref n)    => n.loc(),
+            &TypedPattern(ref n)    => n.loc(),
             &Block(ref n)           => n.loc(),
         }
     }
@@ -1327,7 +1416,6 @@ impl<'ctx> GenNode<'ctx> for Node<'ctx> {
             &Operator(ref n)        => n.text(),
             &TranslationUnit(ref n) => n.text(),
             &FnDecl(ref n)          => n.text(),
-            &VarDecl(ref n)         => n.text(),
             &LogicOp(ref n)         => n.text(),
             &BinOp(ref n)           => n.text(),
             &FnCall(ref n)          => n.text(),
@@ -1335,6 +1423,7 @@ impl<'ctx> GenNode<'ctx> for Node<'ctx> {
             &LetExpr(ref n)         => n.text(),
             &Tuple(ref n)           => n.text(),
             &TuplePattern(ref n)    => n.text(),
+            &TypedPattern(ref n)    => n.text(),
             &Block(ref n)           => n.text(),
         }
     }
@@ -1356,7 +1445,6 @@ impl<'ctx> cats::Show for Node<'ctx> {
             &Operator(..)        => cat_len!("Operator"),
             &TranslationUnit(..) => cat_len!("TranslationUnit"),
             &FnDecl(..)          => cat_len!("FnDecl"),
-            &VarDecl(..)         => cat_len!("VarDecl"),
             &LogicOp(..)         => cat_len!("LogicOp"),
             &BinOp(..)           => cat_len!("BinOp"),
             &FnCall(..)          => cat_len!("FnCall"),
@@ -1364,6 +1452,7 @@ impl<'ctx> cats::Show for Node<'ctx> {
             &LetExpr(..)         => cat_len!("LetExpr"),
             &Tuple(..)           => cat_len!("Tuple"),
             &TuplePattern(..)    => cat_len!("TuplePattern"),
+            &TypedPattern(..)    => cat_len!("TypedPattern"),
             &Block(..)           => cat_len!("Block"),
         }
     }
@@ -1381,7 +1470,6 @@ impl<'ctx> cats::Show for Node<'ctx> {
             &Operator(..)        => cat_write!(w, "Operator"),
             &TranslationUnit(..) => cat_write!(w, "TranslationUnit"),
             &FnDecl(..)          => cat_write!(w, "FnDecl"),
-            &VarDecl(..)         => cat_write!(w, "VarDecl"),
             &LogicOp(..)         => cat_write!(w, "LogicOp"),
             &BinOp(..)           => cat_write!(w, "BinOp"),
             &FnCall(..)          => cat_write!(w, "FnCall"),
@@ -1389,6 +1477,7 @@ impl<'ctx> cats::Show for Node<'ctx> {
             &LetExpr(..)         => cat_write!(w, "LetExpr"),
             &Tuple(..)           => cat_write!(w, "Tuple"),
             &TuplePattern(..)    => cat_write!(w, "TuplePattern"),
+            &TypedPattern(..)    => cat_write!(w, "TypedPattern"),
             &Block(..)           => cat_write!(w, "Block"),
         }
     }
@@ -1408,7 +1497,6 @@ impl<'ctx> util::Tagged<'ctx> for Node<'ctx> {
             &Operator(ref n)        => n.tag(),
             &TranslationUnit(ref n) => n.tag(),
             &FnDecl(ref n)          => n.tag(),
-            &VarDecl(ref n)         => n.tag(),
             &LogicOp(ref n)         => n.tag(),
             &BinOp(ref n)           => n.tag(),
             &FnCall(ref n)          => n.tag(),
@@ -1416,6 +1504,7 @@ impl<'ctx> util::Tagged<'ctx> for Node<'ctx> {
             &LetExpr(ref n)         => n.tag(),
             &Tuple(ref n)           => n.tag(),
             &TuplePattern(ref n)    => n.tag(),
+            &TypedPattern(ref n)    => n.tag(),
             &Block(ref n)           => n.tag(),
         }
     }

@@ -170,6 +170,61 @@ impl<'ctx> Check<'ctx> for No<'ctx> {
     }
 }
 
+impl<'ctx> Check<'ctx> for syntax::TranslationUnit<'ctx> {
+
+    fn decl(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        for decl in &self.fn_decls {
+            try!(decl.decl(ctx, scope));
+        }
+
+        Ok(())
+    }
+
+    fn resolve(&'ctx self, _hint: Option<Ty<'ctx>>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        for decl in &self.fn_decls {
+            try!(decl.resolve(None, ctx, scope));
+        }
+
+        Ok(())
+    }
+
+    fn check(&'ctx self, ctx: CtxRef<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        for decl in &self.fn_decls {
+            try!(decl.check(ctx));
+        }
+
+        Ok(())
+    }
+}
+
+impl<'ctx> Check<'ctx> for syntax::FnDecl<'ctx> {
+
+    /// Declare the arguments in function scope.
+    fn decl(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        Ok(())
+    }
+
+    fn resolve(&'ctx self, _hint: Option<Ty<'ctx>>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        Ok(())
+    }
+
+    fn check(&'ctx self, ctx: CtxRef<'ctx>)
+    -> error::Result<'ctx, ()>
+    {
+        Ok(())
+    }
+}
+
 /// Compiler context for processing expressions.
 pub struct Context<'ctx> {
     ty_map: util::TagMap<'ctx, Ty<'ctx>>,
