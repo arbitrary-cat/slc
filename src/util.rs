@@ -45,6 +45,15 @@ impl<'ctx> Tag<'ctx> {
     }
 }
 
+impl<'ctx> Tagged<'ctx> for Tag<'ctx> {
+    fn tag(&'ctx self)
+    -> Tag<'ctx>
+    where Self: Sized
+    {
+        self.clone()
+    }
+}
+
 /// A trait for types whose addresses can be converted into a tag which is unique for that pointer's
 /// lifetime.
 pub trait Tagged<'ctx> {

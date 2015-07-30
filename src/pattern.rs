@@ -29,14 +29,6 @@ pub trait Pattern<'ctx> {
     fn decl(&'ctx self, ty: Ty<'ctx>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     ;
-
-    /// Emit the C code to assign variables from this pattern. The text of an expression (which it
-    /// is safe to evaluate multiple times) for the value being assigned is stored in `c.field`.
-    ///
-    /// See the implementation for `syntax::TuplePattern` for a good example.
-    fn assign(&'ctx self, ctx: CtxRef<'ctx>, c: &mut CBuffer<'ctx>)
-    -> error::Result<'ctx, ()>
-    ;
 }
 
 impl<'ctx> Pattern<'ctx> for syntax::Node<'ctx> {

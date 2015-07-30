@@ -26,7 +26,7 @@ use cats;
 
 use compiler::{self, CtxRef};
 use error::{self, Error};
-use syntax::{self, Ident, GenNode, No};
+use syntax::{self, Ident, GenNode};
 use types::Ty;
 use util;
 
@@ -128,15 +128,15 @@ pub trait Check<'ctx> {
     ;
 }
 
-impl<'ctx> Check<'ctx> for No<'ctx> {
+impl<'ctx> Check<'ctx> for syntax::Node<'ctx> {
 
     fn decl(&'ctx self, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     {
-        #[allow(unused_imports)] // Until there are some cases here...
         use syntax::Node::*;
 
         match self {
+            &TranslationUnit(ref x) => x.decl(ctx, scope),
 
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
@@ -148,10 +148,10 @@ impl<'ctx> Check<'ctx> for No<'ctx> {
     fn resolve(&'ctx self, hint: Option<Ty<'ctx>>, ctx: CtxRef<'ctx>, scope: &mut Scope<'ctx>)
     -> error::Result<'ctx, ()>
     {
-        #[allow(unused_imports)] // Until there are some cases here...
         use syntax::Node::*;
 
         match self {
+            &TranslationUnit(ref x) => x.resolve(hint, ctx, scope),
 
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),
@@ -163,10 +163,10 @@ impl<'ctx> Check<'ctx> for No<'ctx> {
     fn check(&'ctx self, ctx: CtxRef<'ctx>)
     -> error::Result<'ctx, ()>
     {
-        #[allow(unused_imports)] // Until there are some cases here...
         use syntax::Node::*;
 
         match self {
+            &TranslationUnit(ref x) => x.check(ctx),
 
             _ => return Err(error::Error::InternalError {
                 loc: Some(self.loc()),

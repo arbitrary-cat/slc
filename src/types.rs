@@ -147,8 +147,8 @@ impl<'ctx> cats::Show for Type<'ctx> {
             &Type::Unit                => cat_write!(w, "()"),
             &Type::Bool                => cat_write!(w, "bool"),
             &Type::Opt(t)              => cat_write!(w, "? ", t),
-            &Type::Unresolved          => cat_write!(w, "<unresolved>"),
-            &Type::Func { from, to }   => cat_write!(w, "fn ", from, ": ", to),
+            &Type::Unresolved          => cat_write!(w, "_"),
+            &Type::Func { from, to }   => cat_write!(w, "fn ", from, " -> ", to),
             &Type::Tuple { ref elems } => {
                 try!(cat_write!(w, "("));
                 for (idx, &elem) in elems.iter().enumerate() {
@@ -157,5 +157,70 @@ impl<'ctx> cats::Show for Type<'ctx> {
                 cat_write!(w, ")")
             }
         }
+    }
+}
+
+// The index of a type within the InferenceEngine
+type TypeID = usize;
+
+enum Constructor {
+    // The identity type constructor.
+    Identity(TypeID),
+
+    // fn .0 -> .1
+    Func(TypeID, TypeID)
+}
+
+struct TypeConstraint {
+    lhs: TypeID,
+    rhs: Constructor,
+}
+
+pub struct InferenceEngine<'ctx> {
+    constraints: Vec<TypeConstraint>,
+
+    tag2id:  util::TagMap<'ctx, TypeID>,
+    next_id: TypeID,
+}
+
+impl<'ctx> InferenceEngine<'ctx> {
+    fn get_id<T>(&mut self, t: &'ctx T)
+    -> TypeID
+    where T: util::Tagged<'ctx>,
+    {
+        match self.tag2id.get(t) {
+            Some(id) => id,
+            None     => {
+                let id = self.next_id;
+                self.next_id += 1;
+                self.tag2id.insert(t, id);
+                id
+            }
+        }
+    }
+
+    pub fn id_constraint<T>(&mut self, a: &'ctx T, b: &'ctx T)
+    where T: util::Tagged<'ctx>,
+    {
+        let a_id = self.get_id(a);
+        let b_id = self.get_id(b);
+
+        self.constraints.push(TypeConstraint {
+            lhs: a_id,
+            rhs: Constructor::Identity(b_id),
+        });
+    }
+
+    pub fn fn_constraint<T>(&mut self, f: &'ctx T, a: &'ctx T, b: &'ctx T)
+    where T: util::Tagged<'ctx>,
+    {
+        let f_id = self.get_id(f);
+        let a_id = self.get_id(a);
+        let b_id = self.get_id(b);
+
+        self.constraints.push(TypeConstraint {
+            lhs: f_id,
+            rhs: Constructor::Func(a_id, b_id),
+        });
     }
 }
