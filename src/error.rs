@@ -53,7 +53,7 @@ pub enum Error<'ctx> {
         /// Location where redeclaration was attemped.
         ident: &'ctx Ident<'ctx>,
 
-        /// Location where the original declaration occured.
+        /// Location where the original declaration occurred.
         decl:  &'ctx Ident<'ctx>,
     },
     NotDeclared {
